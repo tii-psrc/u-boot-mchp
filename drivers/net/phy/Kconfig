@@ -312,6 +312,20 @@ config PHY_TI_DP83869
 	---help---
 	  Adds support for the TI DP83869 1Gbit PHY.
 
+config PHY_TI_DP83TG720
+	bool "Texas Instruments Ethernet DP83TG720 PHY support"
+	select OPEN_ALLIANCE_HELPERS
+	help
+	  The DP83TG720S-Q1 is an automotive Ethernet physical layer
+	  transceiver compliant with IEEE 802.3bp and Open Alliance
+	  standards. It supports key functions necessary for
+	  transmitting and receiving data over both unshielded and
+	  shielded single twisted-pair cables. This device offers
+	  flexible xMII interface options, including support for both
+	  RGMII and SGMII MAC interfaces. It's suitable for applications
+	  requiring high-speed data transmission in automotive
+	  networking environments.
+
 config PHY_TI_GENERIC
 	select PHY_TI
 	bool "Texas Instruments Generic Ethernet PHYs support"
