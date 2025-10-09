@@ -309,8 +309,8 @@ int genphy_parse_link(struct phy_device *phydev)
 			 */
 			gblpa = phy_read(phydev, MDIO_DEVAD_NONE, MII_STAT1000);
 			if (gblpa < 0) {
-				debug("Could not read MII_STAT1000. ");
-				debug("Ignoring gigabit capability\n");
+				log_debug("Could not read MII_STAT1000. ");
+				log_debug("Ignoring gigabit capability\n");
 				gblpa = 0;
 			}
 			gblpa &= phy_read(phydev,
@@ -551,9 +551,12 @@ static struct phy_driver *get_phy_driver(struct phy_device *phydev)
 	struct phy_driver *drv;
 
 	ll_entry = ll_entry_start(struct phy_driver, phy_driver);
-	for (drv = ll_entry; drv != ll_entry + ll_n_ents; drv++)
+	for (drv = ll_entry; drv != ll_entry + ll_n_ents; drv++) {
+    log_debug("phy_id(0x%08X), drv->uid(0x%08X), drv->mask(0x%08X)\n",
+        phy_id, drv->uid, drv->mask);
 		if ((drv->uid & drv->mask) == (phy_id & drv->mask))
 			return drv;
+  }
 
 	/* If we made it here, there's no driver for this PHY */
 	return generic_for_phy(phydev);
@@ -592,6 +595,9 @@ struct phy_device *phy_device_create(struct mii_dev *bus, int addr,
 
 	dev->drv = get_phy_driver(dev);
 
+  log_debug("dev->addr : 0x%08X\n", dev->addr);
+  log_debug("dev->phy_id : 0x%08X\n", dev->phy_id);
+
 	if (phy_probe(dev)) {
 		printf("%s, PHY probe failed\n", __func__);
 		return NULL;
@@ -622,18 +628,27 @@ int __weak get_phy_id(struct mii_dev *bus, int addr, int devad, u32 *phy_id)
 	 */
 	phy_reg = bus->read(bus, addr, devad, MII_PHYSID1);
 
-	if (phy_reg < 0)
+	if (phy_reg < 0) {
+    log_debug("bus->read(MII_PHYSID1) error... \n");
 		return -EIO;
+  }
 
 	*phy_id = (phy_reg & 0xffff) << 16;
+  log_debug("bus->read(MII_PHYSID1),devad(0x%08X) phy_reg(0x%08X) *phy_id(0x%08X) \n",
+      devad, phy_reg, *phy_id);
 
 	/* Grab the bits from PHYIR2, and put them in the lower half */
 	phy_reg = bus->read(bus, addr, devad, MII_PHYSID2);
 
-	if (phy_reg < 0)
+	if (phy_reg < 0) {
+    log_debug("bus->read(MII_PHYSID2) error... \n");
 		return -EIO;
+  }
 
 	*phy_id |= (phy_reg & 0xffff);
+
+  log_debug("bus->read(MII_PHYSID2),devad(0x%08X)  phy_reg(0x%08X) *phy_id(0x%08X) \n",
+      devad, phy_reg, *phy_id);
 
 	return 0;
 }
@@ -657,6 +672,7 @@ static struct phy_device *create_phy_by_mask(struct mii_dev *bus,
 		if (r == 0 && phy_id == 0)
 			goto next;
 
+    log_debug("r:%d, phy_id:0x%08X\n", r, phy_id);
 		/* If the PHY ID is mostly f's, we didn't find anything */
 		if (r == 0 && (phy_id & 0x1fffffff) != 0x1fffffff) {
 			is_c45 = (devad == MDIO_DEVAD_NONE) ? false : true;
@@ -701,8 +717,10 @@ static struct phy_device *get_phy_device_by_mask(struct mii_dev *bus,
 
 	devad_cnt = sizeof(devad)/sizeof(int);
 	phydev = search_for_existing_phy(bus, phy_mask);
-	if (phydev)
+	if (phydev) {
+    log_debug("search_for_existing_phy() success.\n");
 		return phydev;
+  }
 	/* try different access clauses  */
 	for (i = 0; i < devad_cnt; i++) {
 		phydev = create_phy_by_mask(bus, phy_mask, devad[i]);
@@ -712,14 +730,14 @@ static struct phy_device *get_phy_device_by_mask(struct mii_dev *bus,
 			return phydev;
 	}
 
-	debug("\n%s PHY: ", bus->name);
+	log_debug("\n%s PHY: ", bus->name);
 	while (phy_mask) {
 		int addr = ffs(phy_mask) - 1;
 
-		debug("%d ", addr);
+		log_debug("%d ", addr);
 		phy_mask &= ~(1 << addr);
 	}
-	debug("not found\n");
+	log_debug("not found\n");
 
 	return NULL;
 }
@@ -758,7 +776,7 @@ int phy_reset(struct phy_device *phydev)
 #endif
 
 	if (phy_write(phydev, devad, MII_BMCR, BMCR_RESET) < 0) {
-		debug("PHY reset failed\n");
+		log_debug("PHY reset failed\n");
 		return -1;
 	}
 
@@ -775,7 +793,7 @@ int phy_reset(struct phy_device *phydev)
 		reg = phy_read(phydev, devad, MII_BMCR);
 
 		if (reg < 0) {
-			debug("PHY status read failed\n");
+			log_debug("PHY status read failed\n");
 			return -1;
 		}
 		udelay(1000);
@@ -824,7 +842,7 @@ void phy_connect_dev(struct phy_device *phydev, struct udevice *dev,
 	}
 	phydev->dev = dev;
 	phydev->interface = interface;
-	debug("%s connected to %s mode %s\n", dev->name, phydev->drv->name,
+	log_debug("%s connected to %s mode %s\n", dev->name, phydev->drv->name,
 	      phy_string_for_interface(interface));
 }
 
@@ -996,7 +1014,7 @@ int phy_read(struct phy_device *phydev, int devad, int regnum)
 	struct mii_dev *bus = phydev->bus;
 
 	if (!bus || !bus->read) {
-		debug("%s: No bus configured\n", __func__);
+		log_debug("%s: No bus configured\n", __func__);
 		return -1;
 	}
 
@@ -1016,7 +1034,7 @@ int phy_write(struct phy_device *phydev, int devad, int regnum, u16 val)
 	struct mii_dev *bus = phydev->bus;
 
 	if (!bus || !bus->write) {
-		debug("%s: No bus configured\n", __func__);
+		log_debug("%s: No bus configured\n", __func__);
 		return -1;
 	}
 

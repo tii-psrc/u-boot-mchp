@@ -372,10 +372,13 @@ static int _macb_send(struct macb_device *macb, const char *name, void *packet,
 	if (i <= MACB_TX_TIMEOUT) {
 		if (ctrl & MACB_BIT(TX_UNDERRUN))
 			printf("%s: TX underrun\n", name);
+			log_debug("%s: TX underrun\n", name);
 		if (ctrl & MACB_BIT(TX_BUF_EXHAUSTED))
 			printf("%s: TX buffers exhausted in mid frame\n", name);
+			log_debug("%s: TX buffers exhausted in mid frame\n", name);
 	} else {
 		printf("%s: TX timeout\n", name);
+		log_debug("%s: TX timeout\n", name);
 	}
 
 	/* No one cares anyway */
@@ -524,6 +527,7 @@ static void macb_phy_reset(struct macb_device *macb, const char *name)
 	adv = ADVERTISE_CSMA | ADVERTISE_ALL;
 	macb_mdio_write(macb, macb->phy_addr, MII_ADVERTISE, adv);
 	printf("%s: Starting autonegotiation...\n", name);
+	log_debug("%s: Starting autonegotiation...\n", name);
 	macb_mdio_write(macb, macb->phy_addr, MII_BMCR, (BMCR_ANENABLE
 					 | BMCR_ANRESTART));
 
@@ -534,11 +538,15 @@ static void macb_phy_reset(struct macb_device *macb, const char *name)
 		udelay(100);
 	}
 
-	if (status & BMSR_ANEGCOMPLETE)
+	if (status & BMSR_ANEGCOMPLETE) {
+		log_debug("%s: Autonegotiation complete\n", name);
 		printf("%s: Autonegotiation complete\n", name);
-	else
+  } else {
 		printf("%s: Autonegotiation timed out (status=0x%04x)\n",
 		       name, status);
+		log_debug("%s: Autonegotiation timed out (status=0x%04x)\n",
+		       name, status);
+  }
 }
 
 static int macb_phy_find(struct macb_device *macb, const char *name)
@@ -546,11 +554,14 @@ static int macb_phy_find(struct macb_device *macb, const char *name)
 	int i;
 	u16 phy_id;
 
+#if 0
 	phy_id = macb_mdio_read(macb, macb->phy_addr, MII_PHYSID1);
 	if (phy_id != 0xffff) {
 		printf("%s: PHY present at %d\n", name, macb->phy_addr);
+		log_debug("%s: PHY present at %d\n", name, macb->phy_addr);
 		return 0;
 	}
+#endif
 
 	/* Search for PHY... */
 	for (i = 0; i < 32; i++) {
@@ -558,14 +569,16 @@ static int macb_phy_find(struct macb_device *macb, const char *name)
 		phy_id = macb_mdio_read(macb, macb->phy_addr, MII_PHYSID1);
 		if (phy_id != 0xffff) {
 			printf("%s: PHY present at %d\n", name, i);
+			log_debug("%s: PHY present at %d, phy_id(0x%04X)\n", name, i, phy_id);
 			return 0;
 		}
 	}
 
 	/* PHY isn't up to snuff */
 	printf("%s: PHY not found\n", name);
+	log_debug("%s: PHY not found\n", name);
 
-	return -ENODEV;
+	return 0;//-ENODEV;
 }
 
 /**
@@ -679,12 +692,16 @@ static int macb_phy_init(struct udevice *dev, const char *name)
 	}
 
 #ifdef CONFIG_PHYLIB
-	macb->phydev = phy_connect(macb->bus, macb->phy_addr, dev,
-			     macb->phy_interface);
-	if (!macb->phydev) {
-		printf("phy_connect failed\n");
-		return -ENODEV;
-	}
+  for (i=0; i<32; i++) {
+    macb->phy_addr = i;
+    macb->phydev = phy_connect(macb->bus, macb->phy_addr, dev,
+        macb->phy_interface);
+    if (!macb->phydev) {
+      printf("phy_connect failed\n");
+      log_debug("phy_connect failed\n");
+      //		return -ENODEV;
+    }
+  }
 
 	phy_config(macb->phydev);
 #endif
@@ -711,6 +728,8 @@ static int macb_phy_init(struct udevice *dev, const char *name)
 	if (!(status & BMSR_LSTATUS)) {
 		printf("%s: link down (status: 0x%04x)\n",
 		       name, status);
+		log_debug("%s: link down (status: 0x%04x)\n",
+		       name, status);
 		return -ENETDOWN;
 	}
 
@@ -724,6 +743,10 @@ static int macb_phy_init(struct udevice *dev, const char *name)
 					1 : 0);
 
 			printf("%s: link up, 1000Mbps %s-duplex (lpa: 0x%04x)\n",
+			       name,
+			       duplex ? "full" : "half",
+			       lpa);
+			log_debug("%s: link up, 1000Mbps %s-duplex (lpa: 0x%04x)\n",
 			       name,
 			       duplex ? "full" : "half",
 			       lpa);
@@ -753,6 +776,11 @@ static int macb_phy_init(struct udevice *dev, const char *name)
 		 ? 1 : 0);
 	duplex = (media & ADVERTISE_FULL) ? 1 : 0;
 	printf("%s: link up, %sMbps %s-duplex (lpa: 0x%04x)\n",
+	       name,
+	       speed ? "100" : "10",
+	       duplex ? "full" : "half",
+	       lpa);
+	log_debug("%s: link up, %sMbps %s-duplex (lpa: 0x%04x)\n",
 	       name,
 	       speed ? "100" : "10",
 	       duplex ? "full" : "half",
@@ -1174,6 +1202,7 @@ static int macb_enable_clk(struct udevice *dev)
 	if (!clk_rate)
 		return -EINVAL;
 
+  log_debug("clk_rate : %d\n", clk_rate);
 	macb->pclk_rate = clk_rate;
 
 	return 0;
@@ -1210,8 +1239,10 @@ static int macb_eth_probe(struct udevice *dev)
 					&phandle_args))
 		macb->phy_addr = ofnode_read_u32_default(phandle_args.node,
 							 "reg", -1);
+  log_debug("macb->phy_addr : 0x%08X\n", (unsigned int)macb->phy_addr);
 
 	macb->regs = (void *)(uintptr_t)pdata->iobase;
+  log_debug("macb->regs : 0x%p\n", macb->regs);
 
 	macb->is_big_endian = (cpu_to_be32(0x12345678) == 0x12345678);
 
@@ -1244,6 +1275,7 @@ static int macb_eth_probe(struct udevice *dev)
 	if (ret < 0)
 		return ret;
 	macb->bus = miiphy_get_dev_by_name(dev->name);
+  log_debug("dev->name : %s\n", dev->name);
 #endif
 
 	return 0;

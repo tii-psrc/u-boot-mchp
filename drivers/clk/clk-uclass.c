@@ -473,7 +473,7 @@ ulong clk_get_rate(struct clk *clk)
 	const struct clk_ops *ops;
 	int ret;
 
-	debug("%s(clk=%p)\n", __func__, clk);
+	log_debug("%s(clk=%p)\n", __func__, clk);
 	if (!clk_valid(clk))
 		return 0;
 	ops = clk_dev_ops(clk->dev);
