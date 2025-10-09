@@ -41,6 +41,7 @@
 #include <linux/dma-mapping.h>
 #include <asm/arch/clk.h>
 #include <linux/errno.h>
+#include <linux/bitops.h>
 
 #include "macb.h"
 
@@ -1223,6 +1224,42 @@ static struct macb_config default_gem_config = {
 	.usrio = &macb_default_usrio,
 };
 
+#define APB_BASE_ADDRESS 0x40000000UL
+#define GPIOs_BASE_ADDRESS (APB_BASE_ADDRESS + 0x0100L)
+#define GPIOs0_BASE_ADDRESS (GPIOs_BASE_ADDRESS)
+#define GPIOs1_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 16)
+#define GPIOs2_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 32)
+#define GPIOs3_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 48)
+#define K17_ENA 1
+#define J14_nRst 2
+#define L15_MDC 3
+#define H14_MDIO 25
+
+static int scai_navc_gpio_config(unsigned int gpio_num, unsigned int mask, unsigned int clear)
+{
+  volatile unsigned int *gpio_addr[4] = {
+    (unsigned int *)GPIOs0_BASE_ADDRESS,
+    (unsigned int *)GPIOs1_BASE_ADDRESS,
+    (unsigned int *)GPIOs2_BASE_ADDRESS,
+    (unsigned int *)GPIOs3_BASE_ADDRESS
+  };
+  unsigned int data = 0;
+
+  data = *gpio_addr[gpio_num];
+  log_debug("[pre]\tdata : 0x%08X @0x%p\n", data, (void *)(gpio_addr+gpio_num));
+
+  if (clear)
+    data &= ~mask;
+  else
+    data |= mask;
+  *gpio_addr[gpio_num] = data;
+
+  data = *gpio_addr[gpio_num];
+  log_debug("[post]\tdata : 0x%08X @0x%p\n", data, (void *)(gpio_addr+gpio_num));
+
+  return 0;
+}
+
 static int macb_eth_probe(struct udevice *dev)
 {
 	struct eth_pdata *pdata = dev_get_plat(dev);
@@ -1255,6 +1292,10 @@ static int macb_eth_probe(struct udevice *dev)
 		macb->config = &default_gem_config;
 	}
 
+  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst), 0);
+  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst) | BIT(L15_MDC), 0);
+  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst) | BIT(H14_MDIO), 0);
+###
 #ifdef CONFIG_CLK
 	ret = macb_enable_clk(dev);
 	if (ret)
