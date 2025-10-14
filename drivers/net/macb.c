@@ -371,12 +371,14 @@ static int _macb_send(struct macb_device *macb, const char *name, void *packet,
 	dma_unmap_single(paddr, length, DMA_TO_DEVICE);
 
 	if (i <= MACB_TX_TIMEOUT) {
-		if (ctrl & MACB_BIT(TX_UNDERRUN))
+		if (ctrl & MACB_BIT(TX_UNDERRUN)) {
 			printf("%s: TX underrun\n", name);
 			log_debug("%s: TX underrun\n", name);
-		if (ctrl & MACB_BIT(TX_BUF_EXHAUSTED))
+    }
+		if (ctrl & MACB_BIT(TX_BUF_EXHAUSTED)) {
 			printf("%s: TX buffers exhausted in mid frame\n", name);
 			log_debug("%s: TX buffers exhausted in mid frame\n", name);
+    }
 	} else {
 		printf("%s: TX timeout\n", name);
 		log_debug("%s: TX timeout\n", name);
@@ -540,8 +542,8 @@ static void macb_phy_reset(struct macb_device *macb, const char *name)
 	}
 
 	if (status & BMSR_ANEGCOMPLETE) {
-		log_debug("%s: Autonegotiation complete\n", name);
 		printf("%s: Autonegotiation complete\n", name);
+		log_debug("%s: Autonegotiation complete\n", name);
   } else {
 		printf("%s: Autonegotiation timed out (status=0x%04x)\n",
 		       name, status);
@@ -555,14 +557,11 @@ static int macb_phy_find(struct macb_device *macb, const char *name)
 	int i;
 	u16 phy_id;
 
-#if 0
 	phy_id = macb_mdio_read(macb, macb->phy_addr, MII_PHYSID1);
 	if (phy_id != 0xffff) {
 		printf("%s: PHY present at %d\n", name, macb->phy_addr);
-		log_debug("%s: PHY present at %d\n", name, macb->phy_addr);
 		return 0;
 	}
-#endif
 
 	/* Search for PHY... */
 	for (i = 0; i < 32; i++) {
@@ -579,7 +578,7 @@ static int macb_phy_find(struct macb_device *macb, const char *name)
 	printf("%s: PHY not found\n", name);
 	log_debug("%s: PHY not found\n", name);
 
-	return 0;//-ENODEV;
+	return -ENODEV;
 }
 
 /**
@@ -693,16 +692,12 @@ static int macb_phy_init(struct udevice *dev, const char *name)
 	}
 
 #ifdef CONFIG_PHYLIB
-  for (i=0; i<32; i++) {
-    macb->phy_addr = i;
-    macb->phydev = phy_connect(macb->bus, macb->phy_addr, dev,
-        macb->phy_interface);
-    if (!macb->phydev) {
-      printf("phy_connect failed\n");
-      log_debug("phy_connect failed\n");
-      //		return -ENODEV;
-    }
-  }
+	macb->phydev = phy_connect(macb->bus, macb->phy_addr, dev,
+			     macb->phy_interface);
+	if (!macb->phydev) {
+		printf("phy_connect failed\n");
+		return -ENODEV;
+	}
 
 	phy_config(macb->phydev);
 #endif
@@ -1203,7 +1198,7 @@ static int macb_enable_clk(struct udevice *dev)
 	if (!clk_rate)
 		return -EINVAL;
 
-  log_debug("clk_rate : %d\n", clk_rate);
+  log_debug("clk_rate : %ld\n", clk_rate);
 	macb->pclk_rate = clk_rate;
 
 	return 0;
@@ -1235,7 +1230,7 @@ static struct macb_config default_gem_config = {
 #define L15_MDC 3
 #define H14_MDIO 25
 
-static int scai_navc_gpio_config(unsigned int gpio_num, unsigned int mask, unsigned int clear)
+static int scai_navc_gpio_config(unsigned int gpio_num, unsigned int mask, unsigned int set)
 {
   volatile unsigned int *gpio_addr[4] = {
     (unsigned int *)GPIOs0_BASE_ADDRESS,
@@ -1246,16 +1241,16 @@ static int scai_navc_gpio_config(unsigned int gpio_num, unsigned int mask, unsig
   unsigned int data = 0;
 
   data = *gpio_addr[gpio_num];
-  log_debug("[pre]\tdata : 0x%08X @0x%p\n", data, (void *)(gpio_addr+gpio_num));
+  log_debug("[pre]\tdata : 0x%08X @0x%p\n", data, (void *)gpio_addr[gpio_num]);
 
-  if (clear)
-    data &= ~mask;
-  else
+  if (set)
     data |= mask;
+  else
+    data &= ~mask;
   *gpio_addr[gpio_num] = data;
 
   data = *gpio_addr[gpio_num];
-  log_debug("[post]\tdata : 0x%08X @0x%p\n", data, (void *)(gpio_addr+gpio_num));
+  log_debug("[post]\tdata : 0x%08X @0x%p\n", data, (void *)gpio_addr[gpio_num]);
 
   return 0;
 }
@@ -1292,10 +1287,10 @@ static int macb_eth_probe(struct udevice *dev)
 		macb->config = &default_gem_config;
 	}
 
-  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst), 0);
-  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst) | BIT(L15_MDC), 0);
-  scai_navc_gpio_config(2, BIT(K17_ENA) | BIT(J14_nRst) | BIT(H14_MDIO), 0);
-###
+  scai_navc_gpio_config(2, BIT(K17_ENA), 1);
+  mdelay(20);
+  scai_navc_gpio_config(2, BIT(J14_nRst), 1);
+
 #ifdef CONFIG_CLK
 	ret = macb_enable_clk(dev);
 	if (ret)

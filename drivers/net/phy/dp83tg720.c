@@ -560,16 +560,10 @@ static int dp83tg720_probe(struct phy_device *phydev)
   return 0;
 }
 
-//###
 U_BOOT_PHY_DRIVER(dp83867) = {
 	.name = "TI DP83TG720S",
-#if 1
 	.uid = 0x2000a284,
 	.mask = 0xfffffff0,
-#else
-	.uid = 0x70660,
-	.mask = 0xffff0,
-#endif
 	.features = PHY_GBIT_FEATURES,
 	.probe = &dp83tg720_probe,
 	.config = &dp83tg720_config,
