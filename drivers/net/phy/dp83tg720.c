@@ -392,13 +392,9 @@ static int dp83tg720_chip_init(struct phy_device *phydev)
 		return ret;
 	
 	phydev->autoneg = AUTONEG_DISABLE;
-    	phydev->speed = SPEED_1000;
+  phydev->speed = SPEED_1000;
 	phydev->duplex = DUPLEX_FULL;
   phydev->supported |= SUPPORTED_1000baseT_Full;
-#if 0
-    	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
-                              phydev->supported);
-#endif
 
 	if (dp83tg720->is_master)
 	        ret = phy_write_mmd(phydev, MMD1, 0x0834,
@@ -518,7 +514,7 @@ static int dp83tg720_config_init(struct phy_device *phydev)
 	if (ret < 0)
 		return ret;
 
-	return 0;
+  return genphy_config_aneg(phydev);
 }
 
 static int dp83tg720_config(struct phy_device *phydev)
@@ -560,7 +556,7 @@ static int dp83tg720_probe(struct phy_device *phydev)
   return 0;
 }
 
-U_BOOT_PHY_DRIVER(dp83867) = {
+U_BOOT_PHY_DRIVER(dp83tg720) = {
 	.name = "TI DP83TG720S",
 	.uid = 0x2000a284,
 	.mask = 0xfffffff0,
