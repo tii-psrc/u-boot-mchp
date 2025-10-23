@@ -1,0 +1,5 @@
+config MTD_SCAI_MT29F
+	bool "SCAI Micron MT29F flash memory support"
+	default y
+	help
+	  This enables support for a custom SCAI Micron MT29F flash memory controller.

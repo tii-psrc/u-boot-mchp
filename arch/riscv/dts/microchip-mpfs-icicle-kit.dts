@@ -133,10 +133,85 @@
 		memory-region = <&fabricbuf2ddrncwcb>;
 		sync-mode = <3>;
 	};
+
+
+	/* ===                 SCAI MT29F Flash Definitions               === */
+	scai_nand_0: nand-controller@40000400 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000400 0x10>,  /* QSPI Chip 0 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4; /* Use Quad SPI */
+		status = "okay";
+	};
+
+	scai_nand_1: nand-controller@40000410 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000410 0x10>,  /* QSPI Chip 1 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_2: nand-controller@40000420 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000420 0x10>,  /* QSPI Chip 2 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_3: nand-controller@40000430 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000430 0x10>,  /* QSPI Chip 3 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_4: nand-controller@40000500 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000500 0x10>,  /* QSPI Chip 4 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_5: nand-controller@40000510 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000510 0x10>,  /* QSPI Chip 5 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_6: nand-controller@40000520 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000520 0x10>,  /* QSPI Chip 6 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+
+	scai_nand_7: nand-controller@40000530 {
+		compatible = "navc,scai-qspi-mt29f";
+		reg = <0x40000530 0x10>,  /* QSPI Chip 7 Address & Size */
+		      <0x40000110 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x40000120 0x10>;   /* GPIO2 Base & Size (Common) */
+		spi-tx-bus-width-4;
+		status = "okay";
+	};
+	/* === end of SCAI MT29F Flash Definitions            ===  */
 };
 
 &refclk {
-	clock-frequency = <125000000>;
+	clock-frequency = <100000000>;
 };
 
 &uart1 {
@@ -144,7 +219,7 @@
 };
 
 &mmc {
-	status = "okay";
+	status = "disabled";
 
 	bus-width = <4>;
 	disable-wp;
@@ -160,7 +235,7 @@
 };
 
 &i2c1 {
-	status = "okay";
+	status = "disabled";
 	clock-frequency = <100000>;
 
 	pac193x: pac193x@10 {
@@ -192,7 +267,7 @@
 };
 
 &mac1 {
-	status = "okay";
+	status = "disabled";
 	phy-mode = "sgmii";
 	phy-handle = <&phy1>;
 	phy1: ethernet-phy@9 {

@@ -1,3 +1,5 @@
+source "drivers/mtd/nand/scai_mt29f/Kconfig"
+
 config MTD_NAND_CORE
 	tristate
 
