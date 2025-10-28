@@ -9,16 +9,23 @@
 
 #include <linux/bitops.h> /* For BIT() */
 
-/*
- * Эти определения больше не используются, но оставлены для справки.
- * #define CONFIG_SYS_NAND_MAX_CHIPS 1
- * #define CFG_SYS_NAND_BASE         0x20000000
- */
+#define SCAI_NAND_FIFO_TIMEOUT 100000
+#define SCAI_NAND_FIFO_LENGTH  64
+
+// Constants for packing a byte into a 32-bit word for the hardware.
+// This is required if the hardware expects the byte in the MSB position.
+#define SCAI_QSPI_FIFO_BYTE_SHIFT   24
+#define SCAI_QSPI_FIFO_TX_BYTE_MASK 0xFF000000
+#define SCAI_QSPI_FIFO_RX_BYTE_MASK 0x000000FF
 
 /* --- SCAI QSPI Controller Register Offsets --- */
 #define SCAI_QSPI_REG_DATA          0x00
 #define SCAI_QSPI_REG_CTRL1         0x04
-#define SCAI_QSPI_REG_STATUS1       0x04 /* Status is read from same offset as CTRL1 write */
+#define SCAI_QSPI_REG_CTRL2         0x08
+#define SCAI_QSPI_REG_CTRL3         0x0C
+
+#define SCAI_QSPI_REG_STATUS1       0x04
+#define SCAI_QSPI_REG_STATUS2       0x08
 
 /* --- SCAI QSPI Controller CTRL1 Register Bits --- */
 #define CTRL1_CHIP_ENABLE           BIT(0)
@@ -29,6 +36,20 @@
 #define CTRL1_START                 BIT(9)
 #define CTRL1_TX_COUNT(n)           (((n) & 0x7FF) << 10) /* Count in bytes or words depending on CTRL1_DATA_MODE_WORD */
 #define CTRL1_RX_COUNT(n)           (((n) & 0x7FF) << 21) /* Count in bytes or words depending on CTRL1_DATA_MODE_WORD */
+
+/* --- SCAI QSPI Controller Status2 Register Bits --- */
+#define STATUS2_RX_FIFO_FULL         BIT(0)
+#define STATUS2_RX_FIFO_EMPTY		 BIT(1)
+#define STATUS2_RX_FIFO_RdCnt_MASK   0x07
+#define STATUS2_RX_FIFO_RdCnt_SHIFT  2
+#define STATUS2_RX_FIFO_WrCnt_MASK   0x070
+#define STATUS2_RX_FIFO_WrCnt_SHIFT  9
+#define STATUS2_TX_FIFO_FULL         BIT(16)
+#define STATUS2_TX_FIFO_EMPTY        BIT(17)
+#define STATUS2_TX_FIFO_WRCNT_MASK   0x07
+#define STATUS2_TX_FIFO_WRCNT_SHIFT  18
+#define STATUS2_TX_FIFO_RDCNT_MASK   0x07
+#define STATUS2_TX_FIFO_RDCNT_SHIFT  25
 
 /* --- SCAI QSPI Controller STATUS1 Register Bits --- */
 #define STATUS1_IDLE                BIT(0)
@@ -53,7 +74,13 @@
 #define MT29F_REG_CONFIG                0xB0
 #define MT29F_REG_DIE_SELECT            0xD0
 
+
+#define MT29F_DIE_0                     0x00
+#define MT29F_DIE_1                     0x40
+#define MT29F_UNLOCK_ALL                0x00
+
 /* --- MT29F Status Register Bits --- */
 #define STATUS_OIP_BIT                  BIT(0) /* Operation In Progress */
+#define CONFIG_CONTINUOUS               BIT(0) /* Continuous Read Mode */
 
 #endif /* __MCHP_SCAI_NAND_REGS_H */

@@ -69,7 +69,288 @@ struct scai_nand_priv {
 	int current_die;
 };
 
+static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
+				      const u8 *tx_buf, u32 tx_len_elems,
+				      u8 *rx_buf, u32 rx_len_elems,
+				      bool keep_ce);
 /* --- Low-level QSPI controller functions --- */
+
+// ==================== VERIFIED ====================
+static void scai_set_reg(void __iomem *base, u32 offset, u32 value)
+{
+	// printf("W 0x%08X : 0x%08X\n", base + offset, value);
+	writel(value, base + offset);
+}
+
+static u32 scai_get_reg(void __iomem *base, u32 offset)
+{
+	u32 val = readl(base + offset);
+	// printf("R 0x%08X : 0x%08X\n", base + offset, val);
+	return val;
+}
+
+static int scai_nand_get_feature(struct scai_nand_priv *priv, u8 feature, u8 *value)
+{
+	const u8 cmd[] = { MT29F_CMD_GET_FEATURES, feature };
+	u8 val = 0;
+	int ret;
+
+	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
+	ret =scai_nand_exec_transaction(priv, cmd, sizeof(cmd), &val, sizeof(val), false);
+	*value = val;
+	return ret;
+}
+
+static int scai_nand_set_feature(struct scai_nand_priv *priv, u8 feature, u8 value)
+{
+	const u8 cmd[] = { MT29F_CMD_SET_FEATURES, feature, value};
+
+	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
+	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
+}
+
+static int scai_nand_write_enable(struct scai_nand_priv *priv)
+{
+	const u8 cmd = MT29F_CMD_WRITE_ENABLE;
+
+	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
+	return scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false);
+}
+
+static int scai_nand_wait_flash_ready(struct scai_nand_priv *priv)
+{
+	u8 status = 0;
+	int retries = 1000;
+	int err;
+
+	while (--retries) {
+		err = scai_nand_get_feature(priv, MT29F_REG_STATUS, &status);
+		if (err)
+			return -EIO;
+		if (!(status & STATUS_OIP_BIT))
+			return 0;
+		udelay(150);
+	}
+
+	dev_err(priv->mtd.dev, "Flash wait ready timeout\n");
+	return -ETIMEDOUT;
+}
+
+static int scai_nand_select_die(struct scai_nand_priv *priv, int die)
+{
+	if (die < 0 || die > 1)
+		return -EINVAL;
+
+	if (priv->current_die == die)
+		return 0;
+
+	u8 die_val = (die == 1) ? MT29F_DIE_1 : MT29F_DIE_0;
+	int ret = scai_nand_set_feature(priv, MT29F_REG_DIE_SELECT, die_val);
+	if (ret == 0)
+		priv->current_die = die;
+
+	return ret;
+}
+
+static int scai_nand_unlock_all_blocks(struct scai_nand_priv *priv)
+{
+	return scai_nand_set_feature(priv, MT29F_REG_LOCK, MT29F_UNLOCK_ALL);
+}
+
+// static int scai_nand_reset_device(struct scai_nand_priv *priv)
+// {
+// 	const u8 cmd = MT29F_CMD_RESET_DEVICE;
+// 	int ret;
+// 
+// 	ret = scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false, false);
+// 	if (ret)
+// 		return ret;
+// 
+// 	priv->current_die = 0; /* Resetting chip resets die select to 0 */
+// 	return scai_nand_wait_flash_ready(priv);
+// }
+
+static int scai_read_id(struct scai_nand_priv *priv, u8 *jedec_ids, u32 len)
+{
+	const u8 cmd[] = { MT29F_CMD_READ_ID, 0xFF };
+	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), jedec_ids, len, false);
+}
+
+static int scai_nand_init_device(struct scai_nand_priv *priv)
+{
+	int ret;	
+
+	u8 config_reg = 0;
+	ret = scai_nand_get_feature(priv, MT29F_REG_CONFIG, &config_reg);
+	if (ret)
+		return ret;
+
+	config_reg |= CONFIG_CONTINUOUS;
+	ret = scai_nand_set_feature(priv, MT29F_REG_CONFIG, config_reg);
+	if (ret)
+		return ret;
+
+	ret = scai_nand_unlock_all_blocks(priv);
+	if (ret)
+		return ret;
+
+	return ret;
+}
+
+static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
+				const void* tx_buffer,
+				u32 tx_len)
+{
+	u32 status2_word     = 0;
+	u32 elements_written = 0;
+	bool  is_word        = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
+
+	const u8*  buf8      = (const u8*) tx_buffer;
+	const u32* buf32     = (const u32*)tx_buffer;
+
+	while (elements_written < tx_len) {
+		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
+		/* Check for free space in FIFO */
+		do {
+			status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+			if (!(status2_word & STATUS2_TX_FIFO_FULL)) {
+				break; /* Free space available, exit wait loop */
+			}
+			timeout_counter--;
+		} while (timeout_counter > 0);
+
+		if (timeout_counter == 0) {
+			dev_err(priv->mtd.dev, "Tx FIFO timeout\n");
+			return elements_written; /* Return the number of elements written */
+		}
+
+		/* Determine how much data can be written */
+		u32 fifo_wr_cnt = (status2_word & STATUS2_TX_FIFO_WRCNT_MASK) >>
+				  STATUS2_TX_FIFO_WRCNT_SHIFT;
+		u32 free_space_words = SCAI_NAND_FIFO_LENGTH - fifo_wr_cnt;
+		u32 chunk_size = tx_len - elements_written;
+		if (chunk_size > free_space_words) {
+			chunk_size = free_space_words;
+		}
+
+		/* Write the data to the FIFO */
+		for (u32 i = 0; i < chunk_size; ++i) {
+			u32 data_to_write = 0;
+
+			if (is_word) {
+				data_to_write = buf32[elements_written];
+			} else {
+				data_to_write = (((u32)buf8[elements_written]) <<
+						 SCAI_QSPI_FIFO_BYTE_SHIFT) &
+						SCAI_QSPI_FIFO_TX_BYTE_MASK;
+				data_to_write |= ~SCAI_QSPI_FIFO_TX_BYTE_MASK;
+			}
+			
+			scai_set_reg(priv->regs, SCAI_QSPI_REG_DATA, data_to_write);
+			elements_written++;
+		}
+	}
+
+	return elements_written;
+}
+
+static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
+			       void* rx_buffer,
+			       u32 rx_len)
+{
+	u32  status2_word  = 0;
+	u32  elements_read = 0;
+	bool is_word       = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
+
+	u8*  buf8          = (u8*)  rx_buffer;
+	u32* buf32         = (u32*) rx_buffer;
+
+	while (elements_read < rx_len) {
+		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
+
+		/* Wait for data in Rx FIFO */
+		do {
+			status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+			if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
+				break; /* Data is available, exit the wait loop. */
+			}
+			timeout_counter--;
+		} while (timeout_counter > 0);
+
+		if (timeout_counter == 0) {
+			dev_err(priv->mtd.dev, "Rx FIFO timeout\n");
+			return elements_read;
+		}
+
+		/* Determine how much data can be read */
+		u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
+				      STATUS2_RX_FIFO_RdCnt_SHIFT;
+		u32 chunk_size = rx_len - elements_read;
+		if (chunk_size > words_available) {
+			chunk_size = words_available;
+		}
+
+		/* Read data */
+		for (u32 i = 0; i < chunk_size; ++i) {
+			u32 value = scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
+
+			if (is_word) {
+				buf32[elements_read] = value;
+			} else {
+				// As per softcore example, extract the LSB for byte-wise reads.
+				buf8[elements_read] = (u8)(value & SCAI_QSPI_FIFO_RX_BYTE_MASK);
+			}
+			elements_read++;
+		}
+	}
+
+	/* Clean up FIFO */
+	status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+
+	if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
+		u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
+				      STATUS2_RX_FIFO_RdCnt_SHIFT;
+		dev_warn(priv->mtd.dev, "Draining %u unexpected words from RX FIFO\n",
+			 words_available);
+		for (u32 i = 0; i < words_available; ++i) {
+			scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
+		}
+	}
+
+	return elements_read;
+}
+
+static int scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_elems, u32 rx_len_elems)
+{
+	u32 ctrl1 = priv->ctrl1_sw_copy;
+
+	ctrl1 &= ~(CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
+	ctrl1 |= CTRL1_TX_COUNT(tx_len_elems) | CTRL1_RX_COUNT(rx_len_elems);
+	ctrl1 |= CTRL1_START;
+	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+
+	ctrl1 |= CTRL1_CHIP_ENABLE;
+	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+	priv->ctrl1_sw_copy = ctrl1;
+}
+
+static void scai_nand_finish_transaction(struct scai_nand_priv *priv, bool keep_ce)
+{
+	u32 ctrl1 = priv->ctrl1_sw_copy;
+
+	ctrl1 &= ~(CTRL1_START | CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
+	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+
+	if (!keep_ce) {
+		ctrl1 &= ~CTRL1_CHIP_ENABLE;
+		scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+	}
+	priv->ctrl1_sw_copy = ctrl1;
+}
+// =============================================================
 
 static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 {
@@ -87,42 +368,33 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
 				      const u8 *tx_buf, u32 tx_len_elems,
 				      u8 *rx_buf, u32 rx_len_elems,
-				      bool use_word_mode, bool keep_ce)
+				      bool keep_ce)
 {
-	u32 ctrl1;
-	u32 total_tx_bytes = use_word_mode ? tx_len_elems * 4 : tx_len_elems;
-	u32 total_rx_bytes = use_word_mode ? rx_len_elems * 4 : rx_len_elems;
-	int ret;
-
-	/* Prepare CTRL1 register value */
-	ctrl1 = priv->ctrl1_sw_copy;
-	ctrl1 &= ~(CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF) | CTRL1_DATA_MODE_WORD);
-	ctrl1 |= CTRL1_TX_COUNT(tx_len_elems) | CTRL1_RX_COUNT(rx_len_elems);
-
-	if (use_word_mode)
-		ctrl1 |= CTRL1_DATA_MODE_WORD;
+	int ret = 0;	
 
 	/* Start transaction */
-	ctrl1 |= CTRL1_START | CTRL1_CHIP_ENABLE;
-	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
-	ctrl1 &= ~CTRL1_START;
-	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
+	scai_nand_start_transaction(priv, tx_len_elems, rx_len_elems);
 
-	/* Handle FIFO operations */
+	/* Handle Tx FIFO operations */
 	if (tx_len_elems > 0 && tx_buf) {
-		for (u32 i = 0; i < total_tx_bytes; i += 4) {
-			u32 word_to_write = 0;
-			size_t bytes_to_copy = min((size_t)4, (size_t)(total_tx_bytes - i));
-			memcpy(&word_to_write, tx_buf + i, bytes_to_copy);
-			writel(word_to_write, priv->regs + SCAI_QSPI_REG_DATA);
+		u32 written = scai_nand_fifo_write(priv, tx_buf, tx_len_elems);
+
+		if (written < tx_len_elems) {
+			dev_err(priv->mtd.dev, "FIFO write failed (wrote %u of %u)\n",
+				written, tx_len_elems);
+				scai_nand_finish_transaction(priv, keep_ce);			
+				return -ETIMEDOUT;
 		}
 	}
 
 	if (rx_len_elems > 0 && rx_buf) {
-		for (u32 i = 0; i < total_rx_bytes; i += 4) {
-			u32 read_word = readl(priv->regs + SCAI_QSPI_REG_DATA);
-			size_t bytes_to_copy = min((size_t)4, (size_t)(total_rx_bytes - i));
-			memcpy(rx_buf + i, &read_word, bytes_to_copy);
+		u32 read_count = scai_nand_fifo_read(priv, rx_buf, rx_len_elems);
+
+		if (read_count < rx_len_elems) {
+			dev_err(priv->mtd.dev, "FIFO read failed (read %u of %u)\n",
+				read_count, rx_len_elems);
+			scai_nand_finish_transaction(priv, keep_ce);
+			return -ETIMEDOUT;
 		}
 	}
 
@@ -131,81 +403,12 @@ static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
 	if (ret)
 		return ret;
 
-	/* Finalize transaction (deassert CE) */
-	if (!keep_ce) {
-		ctrl1 &= ~CTRL1_CHIP_ENABLE;
-		writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
-	}
-
-	priv->ctrl1_sw_copy = ctrl1;
+	/* Finalize transaction */
+	scai_nand_finish_transaction(priv, keep_ce);
 	return 0;
 }
 
 /* --- SPI-NAND-like Protocol Helpers --- */
-
-static int scai_nand_read_reg(struct scai_nand_priv *priv, u8 reg, u8 *val)
-{
-	const u8 cmd[] = { MT29F_CMD_GET_FEATURES, reg };
-	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), val, 1, false, false);
-}
-
-static int scai_nand_write_reg(struct scai_nand_priv *priv, u8 reg, u8 val)
-{
-	const u8 cmd[] = { MT29F_CMD_SET_FEATURES, reg, val };
-	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, false);
-}
-
-static int scai_nand_wait(struct scai_nand_priv *priv)
-{
-	u8 status;
-	int retries = 1000;
-
-	do {
-		if (scai_nand_read_reg(priv, MT29F_REG_STATUS, &status))
-			return -EIO;
-		if (!(status & STATUS_OIP_BIT))
-			return 0;
-		udelay(150);
-	} while (--retries);
-
-	dev_err(priv->mtd.dev, "Flash wait ready timeout\n");
-	return -ETIMEDOUT;
-}
-
-static int scai_nand_write_enable(struct scai_nand_priv *priv)
-{
-	const u8 cmd = MT29F_CMD_WRITE_ENABLE;
-	return scai_nand_exec_transaction(priv, &cmd, 1, NULL, 0, false, false);
-}
-
-static int scai_nand_reset_device(struct scai_nand_priv *priv)
-{
-	const u8 cmd = MT29F_CMD_RESET_DEVICE;
-	int ret;
-
-	ret = scai_nand_exec_transaction(priv, &cmd, 1, NULL, 0, false, false);
-	if (ret)
-		return ret;
-
-	priv->current_die = 0; /* Resetting chip resets die select to 0 */
-	return scai_nand_wait(priv);
-}
-
-static int scai_nand_select_target(struct scai_nand_priv *priv, int target_die)
-{
-	if (target_die < 0 || target_die > 1)
-		return -EINVAL;
-
-	if (priv->current_die == target_die)
-		return 0;
-
-	u8 die_val = (target_die == 1) ? 0x40 : 0x00;
-	int ret = scai_nand_write_reg(priv, MT29F_REG_DIE_SELECT, die_val);
-	if (ret == 0)
-		priv->current_die = target_die;
-
-	return ret;
-}
 
 static int scai_nand_page_read_to_cache(struct scai_nand_priv *priv, int page_addr)
 {
@@ -216,7 +419,7 @@ static int scai_nand_page_read_to_cache(struct scai_nand_priv *priv, int page_ad
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, false);
+	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
 /**
@@ -240,12 +443,12 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 	cmd[3] = 0x00; /* dummy byte */
 
 	/* Send READ FROM CACHE command, keep CE active */
-	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, true);
+	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
 	if (ret)
 		return ret;
 
 	/* Receive data, release CE */
-	return scai_nand_exec_transaction(priv, NULL, 0, buf, len_elems, use_word_mode, false);
+	return scai_nand_exec_transaction(priv, NULL, 0, buf, len_elems, false);
 }
 
 /**
@@ -268,12 +471,12 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 	cmd[2] = col & 0xFF; /* Column address LSB */
 
 	/* Send PROGRAM LOAD command, keep CE active */
-	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, true);
+	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
 	if (ret)
 		return ret;
 
 	/* Send data for programming, release CE */
-	return scai_nand_exec_transaction(priv, buf, len_elems, NULL, 0, use_word_mode, false);
+	return scai_nand_exec_transaction(priv, buf, len_elems, NULL, 0, false);
 }
 
 static int scai_nand_program_execute(struct scai_nand_priv *priv, int page_addr)
@@ -285,7 +488,7 @@ static int scai_nand_program_execute(struct scai_nand_priv *priv, int page_addr)
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, false);
+	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
 static int scai_nand_block_erase(struct scai_nand_priv *priv, int page_addr)
@@ -297,7 +500,7 @@ static int scai_nand_block_erase(struct scai_nand_priv *priv, int page_addr)
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false, false);
+	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
 
@@ -312,8 +515,10 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 		return;
 	}
 
-	val1 = readl(priv->gpio1_regs + GPIO_REG_RDATA_OFFSET);
-	val2 = readl(priv->gpio2_regs + GPIO_REG_RDATA_OFFSET);
+	// val1 = scai_get_reg(priv->gpio1_regs, GPIO_REG_RDATA_OFFSET);
+	val1 = 0;
+	// val2 = scai_get_reg(priv->gpio2_regs, GPIO_REG_RDATA_OFFSET);
+	val2 = 0;
 
 	if (enable) {
 		val1 |= GPIO1_ENA_SS1_MASK;
@@ -323,8 +528,8 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 		val2 &= ~GPIO2_ENA_SS2_MASK;
 	}
 
-	writel(val1, priv->gpio1_regs + GPIO_REG_WDATA_OFFSET);
-	writel(val2, priv->gpio2_regs + GPIO_REG_WDATA_OFFSET);
+	scai_set_reg(priv->gpio1_regs, GPIO_REG_WDATA_OFFSET, val1);
+	scai_set_reg(priv->gpio2_regs, GPIO_REG_WDATA_OFFSET, val2);
 }
 
 /* --- MTD NAND Callbacks --- */
@@ -336,7 +541,10 @@ static int scai_nand_op_erase(struct nand_device *nand,
 	int ret;
 	int row = nanddev_pos_to_row(nand, pos);
 
-	ret = scai_nand_select_target(priv, pos->target);
+	dev_err(priv->mtd.dev, "Erasing row %d\n", row);
+
+	dev_err(priv->mtd.dev, "Set DIE\n");
+	ret = scai_nand_select_die(priv, pos->target);
 	if (ret)
 		return ret;
 
@@ -351,7 +559,7 @@ static int scai_nand_op_erase(struct nand_device *nand,
 	if (ret)
 		return ret;
 
-	return scai_nand_wait(priv);
+	return scai_nand_wait_flash_ready(priv);
 }
 
 static bool scai_nand_op_isbad(struct nand_device *nand,
@@ -386,7 +594,7 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 		const struct nand_pos *pos = &iter.req.pos;
 		int row = nanddev_pos_to_row(nand, pos);
 
-		ret = scai_nand_select_target(priv, pos->target);
+		ret = scai_nand_select_die(priv, pos->target);
 		if (ret)
 			break;
 
@@ -396,7 +604,7 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 		if (ret)
 			break;
 
-		ret = scai_nand_wait(priv);
+		ret = scai_nand_wait_flash_ready(priv);
 		if (ret)
 			break;
 
@@ -444,7 +652,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		const struct nand_pos *pos = &iter.req.pos;
 		int row = nanddev_pos_to_row(nand, pos);
 
-		ret = scai_nand_select_target(priv, pos->target);
+		ret = scai_nand_select_die(priv, pos->target);
 		if (ret)
 			break;
 
@@ -463,7 +671,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 						     iter.req.datalen,
 						     use_word_mode_data);
 			if (ret) break;
-			ret = scai_nand_wait(priv);
+			ret = scai_nand_wait_flash_ready(priv);
 			if (ret) break;
 		}
 
@@ -477,7 +685,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 						     iter.req.ooblen,
 						     false); /* Force byte mode for OOB */
 			if (ret) break;
-			ret = scai_nand_wait(priv);
+			ret = scai_nand_wait_flash_ready(priv);
 			if (ret) break;
 		}
 
@@ -491,7 +699,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		ret = scai_nand_program_execute(priv, row);
 		if (ret) break;
 
-		ret = scai_nand_wait(priv);
+		ret = scai_nand_wait_flash_ready(priv);
 		if (ret) break;
 	}
 
@@ -506,10 +714,9 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 static int scai_nand_probe(struct udevice *dev)
 {
 	struct scai_nand_priv *priv = dev_get_priv(dev);
-	struct nand_device *nand = &priv->nand;
-	struct mtd_info *mtd = &priv->mtd;
+	struct    nand_device *nand = &priv->nand;
+	struct       mtd_info *mtd  = &priv->mtd;
 	u8 jedec_ids[2];
-	const u8 read_id_cmd[] = { MT29F_CMD_READ_ID, 0x00 };
 	int ret;
 
 	/* Map QSPI controller registers */
@@ -519,12 +726,17 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
+	dev_err(dev, "4 QSPI_REG mapped to VA: %p\n", priv->regs);
+
 	/* Map GPIO_1 control registers */
 	priv->gpio1_regs = dev_remap_addr_index(dev, 1);
 	if (!priv->gpio1_regs) {
 		dev_err(dev, "Failed to map GPIO_1 registers\n");
 		return -EINVAL;
 	}
+
+	dev_err(dev, "GPIO_1 mapped to VA: %p, Value: 0x%08X\n",
+             priv->gpio1_regs, scai_get_reg(priv->gpio1_regs, GPIO_REG_RDATA_OFFSET));
 
 	/* Map GPIO_2 control registers */
 	priv->gpio2_regs = dev_remap_addr_index(dev, 2);
@@ -533,9 +745,12 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
+	dev_err(dev, "GPIO_2 mapped to VA: %p, Value: 0x%08X\n",
+             priv->gpio2_regs, scai_get_reg(priv->gpio2_regs, GPIO_REG_RDATA_OFFSET));
+
 	/* Enable flash power via custom GPIO logic */
 	scai_nand_set_power(priv, true);
-	dev_info(dev, "Enabled MT29F power via custom GPIOs\n");
+	dev_err(dev, "Enabled MT29F power via custom GPIOs\n");
 
 	/* Initialize MTD and NAND structures */
 	nand->mtd = mtd;
@@ -548,27 +763,28 @@ static int scai_nand_probe(struct udevice *dev)
 
 	/* Initial CTRL1 software copy - Set RESET high */
 	priv->ctrl1_sw_copy = CTRL1_RESET; /* nReset = 1 */
-	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
+	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, priv->ctrl1_sw_copy);
 
 	/* Reset the flash chip */
-	ret = scai_nand_reset_device(priv);
+	// ret = scai_nand_reset_device(priv);
+	// if (ret) {
+	// 	dev_err(dev, "Failed to reset device on probe\n");
+	// 	goto err_power_off;
+	// }
+
+	ret = scai_nand_init_device(priv);
 	if (ret) {
-		dev_err(dev, "Failed to reset device on probe\n");
+		dev_err(dev, "Failed to initialize device on probe\n");
 		goto err_power_off;
 	}
 
 	/* Read JEDEC ID */
-	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-	ret = scai_nand_exec_transaction(priv, read_id_cmd, sizeof(read_id_cmd),
-					 NULL, 0, false, true); /* Keep CE */
-	if (ret)
-		goto err_power_off;
-	ret = scai_nand_exec_transaction(priv, NULL, 0, jedec_ids,
-					 sizeof(jedec_ids), false, false); /* Read, release CE */
+	ret = scai_read_id(priv, jedec_ids, sizeof(jedec_ids));
 	if (ret)
 		goto err_power_off;
 
-	dev_info(dev, "JEDEC ID: %02X %02X\n",
+	dev_err(dev, "JEDEC ID: %02X %02X\n",
 		 jedec_ids[0], jedec_ids[1]);
 
 	/* Verify JEDEC ID */
