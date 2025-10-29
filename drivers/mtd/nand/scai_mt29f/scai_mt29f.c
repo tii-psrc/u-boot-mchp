@@ -208,7 +208,7 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 	u32 elements_written = 0;
 	bool  is_word        = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
 
-	const u8*  buf8      = (const u8*) tx_buffer;
+	const u8* buf8      = (const u8*) tx_buffer;
 	const u32* buf32     = (const u32*)tx_buffer;
 
 	while (elements_written < tx_len) {
@@ -265,7 +265,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 	u32  elements_read = 0;
 	bool is_word       = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
 
-	u8*  buf8          = (u8*)  rx_buffer;
+	u8* buf8          = (u8*)  rx_buffer;
 	u32* buf32         = (u32*) rx_buffer;
 
 	while (elements_read < rx_len) {
@@ -543,7 +543,6 @@ static int scai_nand_op_erase(struct nand_device *nand,
 
 	dev_err(priv->mtd.dev, "Erasing row %d\n", row);
 
-	dev_err(priv->mtd.dev, "Set DIE\n");
 	ret = scai_nand_select_die(priv, pos->target);
 	if (ret)
 		return ret;
@@ -566,12 +565,14 @@ static bool scai_nand_op_isbad(struct nand_device *nand,
 			     const struct nand_pos *pos)
 {
 	/* This raw driver does not support bad block management */
+	dev_err(nand->mtd->dev, "Debug: scai_nand_op_isbad() called.\n");
 	return false;
 }
 
 static int scai_nand_op_markbad(struct nand_device *nand,
 			      const struct nand_pos *pos)
 {
+	dev_err(nand->mtd->dev, "Debug: scai_nand_op_markbad() called.\n");
 	return -EOPNOTSUPP;
 }
 
@@ -584,6 +585,8 @@ static const struct nand_ops scai_nand_ops = {
 static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 				  struct mtd_oob_ops *ops)
 {
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_read_oob() called.\n");
+
 	struct nand_device *nand = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
@@ -708,6 +711,58 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	return ret;
 }
 
+static int scai_nand_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
+{
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_erase() called. Addr: 0x%llx, Len: 0x%llx\n",
+		instr->addr, instr->len);
+
+	// struct nand_device *nand = mtd_to_nanddev(mtd);
+
+	return nanddev_mtd_erase(mtd, instr);
+}
+
+static int scai_nand_mtd_block_isbad(struct mtd_info *mtd, loff_t offs)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_pos pos;
+	int ret;
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() called.\n");
+
+	nanddev_offs_to_pos(nand, offs, &pos);
+	ret = nanddev_isbad(nand, &pos);
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() exiting.\n");
+	return ret;
+}
+
+static int scai_nand_mtd_block_markbad(struct mtd_info *mtd, loff_t offs)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_pos pos;
+	int ret;
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_markbad() called.\n");
+
+	nanddev_offs_to_pos(nand, offs, &pos);
+	ret = nanddev_markbad(nand, &pos);
+
+	return ret;
+}
+
+static int scai_nand_mtd_block_isreserved(struct mtd_info *mtd, loff_t offs)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_pos pos;
+	int ret;
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isreserved() called.\n");
+
+	nanddev_offs_to_pos(nand, offs, &pos);
+	ret = nanddev_isreserved(nand, &pos);
+
+	return ret;
+}
 
 /* --- U-Boot Driver Model Probe and Remove --- */
 
@@ -726,7 +781,7 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	dev_err(dev, "4 QSPI_REG mapped to VA: %p\n", priv->regs);
+	dev_err(dev, "5 QSPI_REG mapped to VA: %p\n", priv->regs);
 
 	/* Map GPIO_1 control registers */
 	priv->gpio1_regs = dev_remap_addr_index(dev, 1);
@@ -807,7 +862,7 @@ static int scai_nand_probe(struct udevice *dev)
 		.planes_per_lun = 1, /* Datasheet (Fig 6) shows 1 plane per die */
 	};
 
-	/* This is a raw driver, no ECC handled here */
+	/* This raw driver, no ECC handled here */
 	nand->eccreq.strength = 0;
 	nand->eccreq.step_size = 0;
 
@@ -818,12 +873,18 @@ static int scai_nand_probe(struct udevice *dev)
 		goto err_power_off;
 	}
 
-	/* Override MTD hooks for raw r/w */
-	mtd->_read = NULL;  /* Use default mtd_read -> mtd_read_oob */
-	mtd->_write = NULL; /* Use default mtd_write -> mtd_write_oob */
+	/*
+	 * Set up MTD hooks.
+	 */
+	mtd->_read = NULL;
+	mtd->_write = NULL;
 	mtd->_read_oob = scai_nand_mtd_read_oob;
 	mtd->_write_oob = scai_nand_mtd_write_oob;
-	/* Erase hook is set via nand_ops passed to nanddev_init */
+	mtd->_erase = scai_nand_mtd_erase;
+	mtd->_block_isbad = scai_nand_mtd_block_isbad;
+	mtd->_block_markbad = scai_nand_mtd_block_markbad;
+	mtd->_block_isreserved = scai_nand_mtd_block_isreserved;
+
 	mtd->flags = MTD_CAP_NANDFLASH | MTD_WRITEABLE;
 
 	/* Manually adjust size for dual-die */
