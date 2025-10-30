@@ -12,7 +12,7 @@
 #define RTCCLK_FREQ		1000000
 
 / {
-	model = "Microchip PolarFire-SoC Icicle Kit";
+        model = "TII SpacecraftAI SAFAR/EMA Data Processing Unit (DPU)";
 	compatible = "microchip,mpfs-icicle-reference-rtlv2210",
 		     "microchip,mpfs-icicle-kit", "microchip,mpfs";
 
@@ -133,10 +133,12 @@
 		memory-region = <&fabricbuf2ddrncwcb>;
 		sync-mode = <3>;
 	};
+
+
 };
 
 &refclk {
-	clock-frequency = <125000000>;
+	clock-frequency = <100000000>;
 };
 
 &uart1 {
@@ -144,7 +146,7 @@
 };
 
 &mmc {
-	status = "okay";
+	status = "disabled";
 
 	bus-width = <4>;
 	disable-wp;
@@ -160,7 +162,7 @@
 };
 
 &i2c1 {
-	status = "okay";
+	status = "disabled";
 	clock-frequency = <100000>;
 
 	pac193x: pac193x@10 {
@@ -192,7 +194,7 @@
 };
 
 &mac1 {
-	status = "okay";
+	status = "disabled";
 	phy-mode = "sgmii";
 	phy-handle = <&phy1>;
 	phy1: ethernet-phy@9 {
