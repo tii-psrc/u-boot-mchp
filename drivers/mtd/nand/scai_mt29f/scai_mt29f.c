@@ -70,8 +70,8 @@ struct scai_nand_priv {
 };
 
 static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
-				      const void *tx_buf, u32 tx_len_elems,
-				      void *rx_buf, u32 rx_len_elems,
+				      const u8 *tx_buf, u32 tx_len_elems,
+				      u8 *rx_buf, u32 rx_len_elems,
 				      bool keep_ce);
 /* --- Low-level QSPI controller functions --- */
 
@@ -211,6 +211,12 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 	const u8* buf8      = (const u8*) tx_buffer;
 	const u32* buf32     = (const u32*)tx_buffer;
 
+	/* Handle NULL buffer for dummy writes (HSS quirk) */
+	if (!tx_buffer) {
+		buf8 = NULL;
+		buf32 = NULL;
+	}
+
 	while (elements_written < tx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
 		/* Check for free space in FIFO */
@@ -240,22 +246,15 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 		for (u32 i = 0; i < chunk_size; ++i) {
 			u32 data_to_write = 0;
 
-			/* HSS-based logic: if tx_buffer is NULL, write 0 as dummy data */
-			if (tx_buffer) {
-				if (is_word) {
-					data_to_write = buf32[elements_written];
-				} else {
-					data_to_write = (((u32)buf8[elements_written]) <<
-							 SCAI_QSPI_FIFO_BYTE_SHIFT) &
-							SCAI_QSPI_FIFO_TX_BYTE_MASK;
-					data_to_write |= ~SCAI_QSPI_FIFO_TX_BYTE_MASK;
-				}
+			if (is_word) {
+				/* For dummy write, buf32 is NULL, so we write 0 */
+				data_to_write = buf32 ? buf32[elements_written] : 0;
 			} else {
-				/*
-				 * Send 0 as dummy word.
-				 * This is needed for "Fake Write" in program_load.
-				 */
-				data_to_write = 0;
+				/* For dummy write, buf8 is NULL, so we write 0 */
+				data_to_write = (((u32)(buf8 ? buf8[elements_written] : 0)) <<
+						 SCAI_QSPI_FIFO_BYTE_SHIFT) &
+						SCAI_QSPI_FIFO_TX_BYTE_MASK;
+				data_to_write |= ~SCAI_QSPI_FIFO_TX_BYTE_MASK;
 			}
 			
 			scai_set_reg(priv->regs, SCAI_QSPI_REG_DATA, data_to_write);
@@ -276,12 +275,21 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 
 	u8* buf8          = (u8*)  rx_buffer;
 	u32* buf32         = (u32*) rx_buffer;
+	
+	/* Handle NULL buffer for dummy reads (HSS quirk) */
+	bool is_dummy_read = (rx_buffer == NULL);
+	if (is_dummy_read) {
+		buf8 = NULL;
+		buf32 = NULL;
+	}
 
 	while (elements_read < rx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
 
 		/* Wait for data in Rx FIFO */
 		do {
+			/* Debug: Check if we are stuck polling STATUS2 */
+			/* dev_err(priv->mtd.dev, "FIFO Read: Polling STATUS2\n"); */
 			status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
 			if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
 				break; /* Data is available, exit the wait loop. */
@@ -306,17 +314,13 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		for (u32 i = 0; i < chunk_size; ++i) {
 			u32 value = scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
 
-			/*
-			 * HSS-based logic: if rx_buffer is NULL, discard the read.
-			 * This is needed for the "Fake Read" operation.
-			 */
-			if (rx_buffer) {
-				if (is_word) {
-					buf32[elements_read] = value;
-				} else {
-					// As per softcore example, extract the LSB for byte-wise reads.
-					buf8[elements_read] = (u8)(value & SCAI_QSPI_FIFO_RX_BYTE_MASK);
-				}
+			if (is_dummy_read) {
+				/* Discard the value */
+			} else if (is_word) {
+				buf32[elements_read] = value;
+			} else {
+				// As per softcore example, extract the LSB for byte-wise reads.
+				buf8[elements_read] = (u8)(value & SCAI_QSPI_FIFO_RX_BYTE_MASK);
 			}
 			elements_read++;
 		}
@@ -338,7 +342,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 	return elements_read;
 }
 
-static void scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_elems, u32 rx_len_elems)
+static int scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_elems, u32 rx_len_elems)
 {
 	u32 ctrl1 = priv->ctrl1_sw_copy;
 
@@ -347,9 +351,12 @@ static void scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_
 	ctrl1 |= CTRL1_START;
 	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
 
+	/* HSS quirk: Set CE in a separate write */
 	ctrl1 |= CTRL1_CHIP_ENABLE;
 	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
 	priv->ctrl1_sw_copy = ctrl1;
+
+	return 0;
 }
 
 static void scai_nand_finish_transaction(struct scai_nand_priv *priv, bool keep_ce)
@@ -367,22 +374,37 @@ static void scai_nand_finish_transaction(struct scai_nand_priv *priv, bool keep_
 }
 // =============================================================
 
+/**
+ * @brief Waits for the QSPI controller to be idle, using a "fast" poll.
+ *
+ * This function uses a tight, "hot" busy-wait loop with no delays,
+ * exactly like the HSS driver. This is CRITICAL for all transactions.
+ *
+ * @param priv Private driver data
+ * @return 0 on success, -ETIMEDOUT on timeout
+ */
 static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 {
 	u32 status;
-	int ret;
+	/* Use a hot-loop as seen in HSS qspi_fpga_wait_idle */
+	u32 retries = SCAI_NAND_FIFO_TIMEOUT;
 
-	ret = readl_poll_timeout(priv->regs + SCAI_QSPI_REG_STATUS1, status,
-				 status & STATUS1_IDLE, 100000);
-	if (ret)
-		dev_err(priv->mtd.dev, "QSPI controller idle wait timeout\n");
+	do {
+		status = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS1);
+		if (status & STATUS1_IDLE) {
+			return 0; /* Success */
+		}
+		retries--;
+	} while (retries > 0);
 
-	return ret;
+	dev_err(priv->mtd.dev, "QSPI controller idle wait timeout\n");
+	return -ETIMEDOUT;
 }
 
+
 static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
-				      const void *tx_buf, u32 tx_len_elems,
-				      void *rx_buf, u32 rx_len_elems,
+				      const u8 *tx_buf, u32 tx_len_elems,
+				      u8 *rx_buf, u32 rx_len_elems,
 				      bool keep_ce)
 {
 	int ret = 0;	
@@ -412,7 +434,7 @@ static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
 			return -ETIMEDOUT;
 		}
 	}
-dev_err(priv->mtd.dev, "wait IDLE\n");
+
 	/* Wait for controller to finish */
 	ret = scai_nand_wait_idle(priv);
 	if (ret)
@@ -434,9 +456,9 @@ static int scai_nand_page_read_to_cache(struct scai_nand_priv *priv, int page_ad
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	/* This is a single transaction, CE must be released at the end */
-	/* Always x1, Byte mode */
+	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
 	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
@@ -453,9 +475,10 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 {
 	u8 cmd[4];
 	int ret;
-	u32 len_elems = use_word_mode ? ((len_bytes + 3) / 4) : len_bytes;
+	u32 rx_elements = (use_word_mode ? ((len_bytes + 3) / 4) : len_bytes);
 
-	dev_err(priv->mtd.dev, "Read from cache: word_mode = %d, quad mode = %d\n", use_word_mode, priv->is_quad);
+	dev_err(priv->mtd.dev, "Read from cache: word_mode = %d, quad mode = %d\n",
+		use_word_mode, priv->is_quad);
 
 	cmd[0] = priv->is_quad ? MT29F_CMD_READ_FROM_CACHE_X4 : MT29F_CMD_READ_FROM_CACHE_X1;
 	cmd[1] = (col >> 8) & 0xFF; /* col addr MSB */
@@ -463,9 +486,11 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 	cmd[3] = 0x00; /* dummy byte */
 
 	/*
-	 * --- Phase 1: Send Command (in x1, byte mode) ---
-	 * We must send the command in x1, byte mode. Keep CE active.
+	 * This operation is a 3-phase transaction specific to the HSS driver
+	 * logic to handle the SCAI QSPI controller quirk.
 	 */
+
+	/* Phase 1: Send command (x1, Byte mode), keep CE active */
 	dev_err(priv->mtd.dev, "Phase 1: send command\n");
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
@@ -473,9 +498,10 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 		return ret;
 
 	/*
-	 * --- Phase 2: Fake Read (HSS SCAI Quirk) ---
-	 * Only required in quad mode to "fast-forward" to the correct col addr,
-	 * as the controller starts streaming from col 0 regardless.
+	 * Phase 2: Dummy Read (HSS SCAI Quirk)
+	 * This transaction must run EVEN IF col == 0 (dummy_rx_len_words == 0)
+	 * because it is responsible for switching the hardware controller
+	 * into QSPI / Word mode *before* Phase 3 begins.
 	 */
 	if (priv->is_quad) {
 		/* HSS code does (col_addr >> 2) */
@@ -485,38 +511,29 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 		priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
 		/*
-			* Execute dummy read. Pass NULL as rx_buf to discard data.
-			* Keep CE active.
-			*/
-		dev_err(priv->mtd.dev, "Phase 2 - dummy read\n");
+		 * Execute dummy read. Pass NULL as rx_buf to discard data.
+		 * Keep CE active.
+		 */
+		dev_err(priv->mtd.dev, "Phase 2 - dummy read %u words\n", dummy_rx_len_words);
 		ret = scai_nand_exec_transaction(priv, NULL, 0,
-							NULL, dummy_rx_len_words,
-							true);
+					   NULL, dummy_rx_len_words,
+					   true);
 		if (ret)
 			return ret;
 	}
 
-	/*
-	 * --- Phase 3: Real Read ---
-	 * Set the correct mode for the real data transfer.
-	 */
-	if (priv->is_quad) {
-		priv->ctrl1_sw_copy |= CTRL1_LANE_WIDTH_X4;
-	} else {
-		priv->ctrl1_sw_copy &= ~CTRL1_LANE_WIDTH_X4;
+	/* Phase 3: Real Read (Data phase) */
+	/* Controller is already in correct mode (x1/Byte or x4/Word) from Phase 2 */
+	/* If not quad, ensure we are in the mode requested by the caller */
+	if (!priv->is_quad) {
+		if (use_word_mode)
+			priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
+		else
+			priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
 	}
 
-	if (use_word_mode) {
-		priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
-	} else {
-		priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
-	}
-
-	/* Execute real data read. Release CE at the end. */
 	dev_err(priv->mtd.dev, "Phase 3 - real read\n");
-	ret = scai_nand_exec_transaction(priv, NULL, 0, buf, len_elems, false);
-
-	return ret;
+	return scai_nand_exec_transaction(priv, NULL, 0, buf, rx_elements, false);
 }
 
 /**
@@ -532,61 +549,38 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 {
 	u8 cmd[3];
 	int ret;
-	u32 len_elems = use_word_mode ? ((len_bytes + 3) / 4) : len_bytes;
+	u32 tx_elements = (use_word_mode ? ((len_bytes + 3) / 4) : len_bytes);
 
 	cmd[0] = priv->is_quad ? MT29F_CMD_PROGRAM_LOAD_X4 : MT29F_CMD_PROGRAM_LOAD_X1;
 	cmd[1] = (col >> 8) & 0xFF; /* Column address MSB */
 	cmd[2] = col & 0xFF; /* Column address LSB */
 
 	/*
-	 * --- Phase 1: Send Command (in x1, byte mode) ---
-	 * Keep CE active.
+	 * HSS Code Analysis (`SCAI_MT29_Flash_program`):
+	 * The HSS driver does NOT perform a "dummy write". It sends the
+	 * command, then immediately sets the mode (x4/Word) and sends
+	 * the real data. We will replicate that logic here.
 	 */
+
+	/* Phase 1: Send PROGRAM LOAD command (x1, Byte mode), keep CE active */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
 	if (ret)
 		return ret;
 
-	/*
-	 * --- Phase 2: Fake Write (HSS SCAI Quirk) ---
-	 * Only required in quad mode to "fast-forward" to the correct col addr.
-	 */
+	/* Phase 2: Real Write (Data phase) */
+	
+	/* Set mode for data phase */
 	if (priv->is_quad) {
-		/* HSS code does (col_addr >> 2) */
-		u32 dummy_tx_len_words = (col >> 2);
-
-		if (dummy_tx_len_words > 0) {
-			/* Switch to Quad, Word mode for dummy write */
-			priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-
-			/*
-			 * Execute dummy write. Pass NULL as tx_buf to send 0s.
-			 * Keep CE active.
-			 */
-			ret = scai_nand_exec_transaction(priv, NULL, dummy_tx_len_words,
-						       NULL, 0,
-						       true);
-			if (ret)
-				return ret;
-		}
-	}
-
-	/*
-	 * --- Phase 3: Real Write ---
-	 * Set the correct mode for the real data transfer.
-	 */
-	if (priv->is_quad)
-		priv->ctrl1_sw_copy |= CTRL1_LANE_WIDTH_X4;
-	else
-		priv->ctrl1_sw_copy &= ~CTRL1_LANE_WIDTH_X4;
-
-	if (use_word_mode)
+		priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+	} else if (use_word_mode) {
 		priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
-	else
+	} else {
 		priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
-
-	/* Execute real data write. Release CE at the end. */
-	return scai_nand_exec_transaction(priv, buf, len_elems, NULL, 0, false);
+	}
+	
+	/* Send data for programming, release CE */
+	return scai_nand_exec_transaction(priv, buf, tx_elements, NULL, 0, false);
 }
 
 static int scai_nand_program_execute(struct scai_nand_priv *priv, int page_addr)
@@ -598,9 +592,9 @@ static int scai_nand_program_execute(struct scai_nand_priv *priv, int page_addr)
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	/* This is a single transaction, CE must be released at the end */
-	/* Always x1, Byte mode */
+	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
 	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
@@ -613,9 +607,9 @@ static int scai_nand_block_erase(struct scai_nand_priv *priv, int page_addr)
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
-	/* This is a single transaction, CE must be released at the end */
-	/* Always x1, Byte mode */
+	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
 	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
@@ -650,6 +644,22 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 
 /* --- MTD NAND Callbacks --- */
 
+/**
+ * scai_nand_mtd_erase() - MTD erase hook
+ *
+ * This function is the bridge between the MTD layer's erase request
+ * and the generic NAND device layer's erase function.
+ */
+static int scai_nand_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_erase() called.\n");
+
+	/* Pass the call to the generic NAND helper */
+	return nanddev_mtd_erase(nand, instr);
+}
+
 static int scai_nand_op_erase(struct nand_device *nand,
 			    const struct nand_pos *pos)
 {
@@ -659,6 +669,7 @@ static int scai_nand_op_erase(struct nand_device *nand,
 
 	dev_err(priv->mtd.dev, "Erasing row %d\n", row);
 
+	dev_err(priv->mtd.dev, "Set DIE\n");
 	ret = scai_nand_select_die(priv, pos->target);
 	if (ret)
 		return ret;
@@ -677,6 +688,28 @@ static int scai_nand_op_erase(struct nand_device *nand,
 	return scai_nand_wait_flash_ready(priv);
 }
 
+/**
+ * scai_nand_mtd_block_isbad() - MTD isbad hook
+ *
+ * This function is the bridge between the MTD layer's isbad request
+ * and the generic NAND device layer's isbad function.
+ */
+static int scai_nand_mtd_block_isbad(struct mtd_info *mtd, loff_t offs)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_pos pos;
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() called.\n");
+
+	/*
+	 * We must manually implement the logic from nanddev_mtd_block_isbad
+	 * to call our nand->ops->isbad function.
+	 */
+	nanddev_offs_to_pos(nand, offs, &pos);
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() exiting.\n");
+	return nand->ops->isbad(nand, &pos);
+}
+
 static bool scai_nand_op_isbad(struct nand_device *nand,
 			     const struct nand_pos *pos)
 {
@@ -685,12 +718,38 @@ static bool scai_nand_op_isbad(struct nand_device *nand,
 	return false;
 }
 
+/**
+ * scai_nand_mtd_block_markbad() - MTD markbad hook
+ *
+ * This function is the bridge between the MTD layer's markbad request
+ * and the generic NAND device layer's markbad function.
+ */
+static int scai_nand_mtd_block_markbad(struct mtd_info *mtd, loff_t offs)
+{
+	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_pos pos;
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_markbad() called.\n");
+
+	nanddev_offs_to_pos(nand, offs, &pos);
+	return nand->ops->markbad(nand, &pos);
+}
+
 static int scai_nand_op_markbad(struct nand_device *nand,
 			      const struct nand_pos *pos)
 {
-	dev_err(nand->mtd->dev, "Debug: scai_nand_op_markbad() called.\n");
 	return -EOPNOTSUPP;
 }
+
+/**
+ * scai_nand_mtd_block_isreserved() - MTD isreserved hook
+ */
+static int scai_nand_mtd_block_isreserved(struct mtd_info *mtd, loff_t offs)
+{
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isreserved() called.\n");
+	return false;
+}
+
 
 static const struct nand_ops scai_nand_ops = {
 	.erase = scai_nand_op_erase,
@@ -701,44 +760,35 @@ static const struct nand_ops scai_nand_ops = {
 static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 				  struct mtd_oob_ops *ops)
 {
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_read_oob() called.\n");
-
-	struct nand_device *nand    = mtd_to_nanddev(mtd);
+	struct nand_device *nand = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
-	/*
-	 * Word mode is only used for quad.
-	 * OOB is always forced to byte mode.
-	 */
-	bool use_word_mode_data = priv->is_quad;
+	bool use_word_mode_data = priv->is_quad && ((nand->memorg.pagesize % 4) == 0);
+
+	dev_err(mtd->dev, "Debug: scai_nand_mtd_read_oob() called.\n");
 
 	nanddev_io_for_each_page(nand, from, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
 		int row = nanddev_pos_to_row(nand, pos);
 
-		dev_err(mtd->dev, "Debug: Read loop start (Row: %d, Target: %d)\n", row, pos->target);
+		dev_err(mtd->dev, "Debug: Read loop start (Row: %d, Target: %d)\n",
+			row, pos->target);
 
 		dev_err(mtd->dev, "Debug: Read selecting die...\n");
 		ret = scai_nand_select_die(priv, pos->target);
-		if (ret) {
-			dev_err(mtd->dev, "Debug: Read select die FAILED\n");
+		if (ret)
 			break;
-		}
 
 		dev_err(mtd->dev, "Debug: Read (A) calling page_read_to_cache...\n");
 		ret = scai_nand_page_read_to_cache(priv, row);
-		if (ret) {
-			dev_err(mtd->dev, "Debug: Read page_read_to_cache FAILED\n");
+		if (ret)
 			break;
-		}
 
 		dev_err(mtd->dev, "Debug: Read (B) calling wait_flash_ready...\n");
 		ret = scai_nand_wait_flash_ready(priv);
-		if (ret) {
-			dev_err(mtd->dev, "Debug: Read wait_flash_ready FAILED\n");
+		if (ret)
 			break;
-		}
 
 		/* Read page data */
 		if (iter.req.datalen) {
@@ -747,10 +797,8 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 							iter.req.databuf.in,
 							iter.req.datalen,
 							use_word_mode_data);
-			if (ret) {
-				dev_err(mtd->dev, "Debug: Read read_from_cache (data) FAILED\n");
+			if (ret)
 				break;
-			}
 		}
 
 		/* Read OOB data */
@@ -761,12 +809,9 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 							iter.req.oobbuf.in,
 							iter.req.ooblen,
 							false); /* Force byte mode for OOB */
-			if (ret) {
-				dev_err(mtd->dev, "Debug: Read read_from_cache (oob) FAILED\n");
+			if (ret)
 				break;
-			}
 		}
-		dev_err(mtd->dev, "Debug: Read loop finished for row %d\n", row);
 	}
 
 	ops->retlen = ops->len - iter.dataleft;
@@ -782,8 +827,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
-	/* Word mode is only used for quad. OOB is forced to byte mode. */
-	bool use_word_mode_data = priv->is_quad;
+	bool use_word_mode_data = priv->is_quad && ((nand->memorg.pagesize % 4) == 0);
 
 	nanddev_io_for_each_page(nand, to, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
@@ -821,6 +865,9 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		}
 
 		/* Execute program */
+		/* Reset controller to x1 mode for command */
+		priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
 		ret = scai_nand_write_enable(priv);
 		if (ret) break;
 
@@ -834,72 +881,6 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	ops->retlen = ops->len - iter.dataleft;
 	ops->oobretlen = ops->ooblen - iter.oobleft;
 	return ret;
-}
-
-/*
- * MTD ERASE WRAPPER FUNCTION
- */
-static int scai_nand_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
-{
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_erase() called. Addr: 0x%llx, Len: 0x%llx\n",
-		instr->addr, instr->len);
-
-	/* Bridge to nanddev handler, which will call nand->ops->erase */
-	/* This is the correct call as per nand.h and spi-nand-core.c */
-	return nanddev_mtd_erase(mtd, instr);
-}
-
-/*
- * MTD BAD BLOCK MANAGEMENT WRAPPERS
- */
-static int scai_nand_mtd_block_isbad(struct mtd_info *mtd, loff_t offs)
-{
-	struct nand_device *nand = mtd_to_nanddev(mtd);
-	struct nand_pos pos;
-	int ret;
-
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() called.\n");
-
-	nanddev_offs_to_pos(nand, offs, &pos);
-
-	if (!nand->ops->isbad) {
-		dev_warn(mtd->dev, "isbad operation not supported!\n");
-		return 0; /* Assume good */
-	}
-
-	ret = nand->ops->isbad(nand, &pos);
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isbad() exiting.\n");
-	return ret;
-}
-
-static int scai_nand_mtd_block_markbad(struct mtd_info *mtd, loff_t offs)
-{
-	struct nand_device *nand = mtd_to_nanddev(mtd);
-	struct nand_pos pos;
-	int ret;
-
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_markbad() called.\n");
-
-	nanddev_offs_to_pos(nand, offs, &pos);
-
-	if (!nand->ops->markbad) {
-		dev_warn(mtd->dev, "markbad operation not supported!\n");
-		return -EOPNOTSUPP;
-	}
-	
-	ret = nand->ops->markbad(nand, &pos);
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_markbad() finished.\n");
-	return ret;
-}
-
-static int scai_nand_mtd_block_isreserved(struct mtd_info *mtd, loff_t offs)
-{
-	dev_err(mtd->dev, "Debug: scai_nand_mtd_block_isreserved() called.\n");
-	/*
-	 * We don't have a specific op for this,
-	 * just report "not reserved".
-	 */
-	return 0;
 }
 
 
@@ -920,7 +901,7 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	dev_err(dev, "6 QSPI_REG mapped to VA: %p\n", priv->regs);
+	dev_err(dev, "7 QSPI_REG mapped to VA: %p\n", priv->regs);
 
 	/* Map GPIO_1 control registers */
 	priv->gpio1_regs = dev_remap_addr_index(dev, 1);
@@ -953,13 +934,12 @@ static int scai_nand_probe(struct udevice *dev)
 	mtd->name = (char *)dev->name;
 	priv->current_die = -1; /* Force initial die select */
 
+	/* Check for quad-mode property in device tree */
 	priv->is_quad = dev_read_bool(dev, "spi-tx-bus-width-4");
-	if (priv->is_quad)
-		dev_err(dev, "Quad mode selected\n");
-	else {
-		dev_err(dev, "Single mode\n");
-		dev_err(dev, "Temporary set to true\n");
-		priv->is_quad = true;
+	if (priv->is_quad) {
+		dev_err(dev, "Quad mode selected via device tree.\n");
+	} else {
+		dev_err(dev, "Single (x1) mode selected (default).\n");
 	}
 
 	/* Initial CTRL1 software copy - Set RESET high */
@@ -1008,7 +988,7 @@ static int scai_nand_probe(struct udevice *dev)
 		.planes_per_lun = 1, /* Datasheet (Fig 6) shows 1 plane per die */
 	};
 
-	/* This raw driver, no ECC handled here */
+	/* This is a raw driver, no ECC handled here */
 	nand->eccreq.strength = 0;
 	nand->eccreq.step_size = 0;
 
@@ -1019,19 +999,20 @@ static int scai_nand_probe(struct udevice *dev)
 		goto err_power_off;
 	}
 
-	/*
-	 * Set up MTD hooks.
+	/* * Set MTD hooks.
+	 * We provide the _oob versions, and MTD core provides the
+	 * default _read/_write wrappers that call our _oob versions.
 	 */
-	mtd->_read = NULL;
-	mtd->_write = NULL;
+	mtd->_read = NULL;  /* Use default nand_read -> scai_nand_mtd_read_oob */
+	mtd->_write = NULL; /* Use default nand_write -> scai_nand_mtd_write_oob */
 	mtd->_read_oob = scai_nand_mtd_read_oob;
 	mtd->_write_oob = scai_nand_mtd_write_oob;
-	mtd->_erase = scai_nand_mtd_erase;
 
 	/*
-	 * Register bad block management hooks to prevent segfault
-	 * when MTD framework checks block status before erase.
+	 * We must provide bridges for erase and bad block management,
+	 * as MTD core will call these directly.
 	 */
+	mtd->_erase = scai_nand_mtd_erase;
 	mtd->_block_isbad = scai_nand_mtd_block_isbad;
 	mtd->_block_markbad = scai_nand_mtd_block_markbad;
 	mtd->_block_isreserved = scai_nand_mtd_block_isreserved;
