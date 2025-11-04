@@ -327,17 +327,17 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 	}
 
 	/* Clean up FIFO */
-	status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
-
-	if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
-		u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
-				      STATUS2_RX_FIFO_RdCnt_SHIFT;
-		dev_warn(priv->mtd.dev, "Draining %u unexpected words from RX FIFO\n",
-			 words_available);
-		for (u32 i = 0; i < words_available; ++i) {
-			scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
-		}
-	}
+	//status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+//
+	//if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
+	//	u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
+	//			      STATUS2_RX_FIFO_RdCnt_SHIFT;
+	//	dev_warn(priv->mtd.dev, "Draining %u unexpected words from RX FIFO\n",
+	//		 words_available);
+	//	for (u32 i = 0; i < words_available; ++i) {
+	//		scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
+	//	}
+	//}
 
 	return elements_read;
 }
