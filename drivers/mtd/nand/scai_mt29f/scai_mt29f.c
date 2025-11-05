@@ -283,6 +283,9 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		buf32 = NULL;
 	}
 
+	dev_err(priv->mtd.dev, "dbg1: fifo_read: is_word=%d, is_dummy=%d, rx_len=%d\n",
+		is_word, is_dummy_read, rx_len);
+
 	while (elements_read < rx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
 
@@ -516,10 +519,14 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 		 */
 		dev_err(priv->mtd.dev, "Phase 2 - dummy read %u words\n", dummy_rx_len_words);
 		ret = scai_nand_exec_transaction(priv, NULL, 0,
-					   NULL, dummy_rx_len_words,
+					   buf, dummy_rx_len_words,
 					   true);
 		if (ret)
 			return ret;
+
+		for (u32 i = 0; i < dummy_rx_len_words; ++i) {
+			dev_err(priv->mtd.dev, "buf[%u] = 0x%08X (dummy)\n", i, ((u32*)buf)[i]);
+		}
 	}
 
 	/* Phase 3: Real Read (Data phase) */
