@@ -532,7 +532,7 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 			priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
 	}
 
-	dev_err(priv->mtd.dev, "Phase 3 - real read\n");
+	dev_err(priv->mtd.dev, "Phase 3 - real read %d words\n", rx_elements);
 	return scai_nand_exec_transaction(priv, NULL, 0, buf, rx_elements, false);
 }
 
