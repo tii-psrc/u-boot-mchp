@@ -283,9 +283,6 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		buf32 = NULL;
 	}
 
-	dev_err(priv->mtd.dev, "dbg1: fifo_read: is_word=%d, is_dummy=%d, rx_len=%d\n",
-		is_word, is_dummy_read, rx_len);
-
 	while (elements_read < rx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
 
