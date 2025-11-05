@@ -37,6 +37,12 @@ config TARGET_MICROCHIP_PIC64GX_CURIOSITY
 config TARGET_MICROCHIP_VIDEOKIT
 	bool "Support Microchip PolarFire-SoC Video Kit"
 
+config TARGET_SCAI_DPU
+	bool "Support SCAI DPU Board"
+
+config TARGET_SCAI_NAVC
+	bool "Support SCAI NAVC Board"
+
 config TARGET_SUNDANCEDSP_POLARBERRY
 	bool "Support SundanceDSP Polarberry Board (based on Microchip MPFS)"
 
@@ -99,6 +105,8 @@ source "board/microchip/mpfs_icicle/Kconfig"
 source "board/microchip/mpfs_discokit/Kconfig"
 source "board/microchip/mpfs_videokit/Kconfig"
 source "board/microchip/pic64gx_curiosity_kit/Kconfig"
+source "board/tii/scai_dpu/Kconfig"
+source "board/tii/scai_navc/Kconfig"
 source "board/sundancedsp/polarberry/Kconfig"
 source "board/sifive/unleashed/Kconfig"
 source "board/sifive/unmatched/Kconfig"

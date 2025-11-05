@@ -1,0 +1,7 @@
+SCAI NAVC
+M:	Foo
+M:	Bar
+S:	Maintained
+F:	board/microchip/scai_navc/
+F:	include/configs/scai_navc.h
+F:	configs/scai_navc_defconfig

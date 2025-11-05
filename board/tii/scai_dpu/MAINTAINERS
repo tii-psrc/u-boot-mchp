@@ -1,0 +1,7 @@
+SCAI DPU
+M:	Foo
+M:	Bar
+S:	Maintained
+F:	board/microchip/scai_dpu/
+F:	include/configs/scai_dpu.h
+F:	configs/scai_dpu_defconfig
