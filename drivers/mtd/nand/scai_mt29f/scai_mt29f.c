@@ -298,7 +298,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		} while (timeout_counter > 0);
 
 		if (timeout_counter == 0) {
-			dev_err(priv->mtd.dev, "Rx FIFO timeout\n");
+			dev_err(priv->mtd.dev, "Rx FIFO timeout %d\n", elements_read);
 			return elements_read;
 		}
 
