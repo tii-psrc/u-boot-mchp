@@ -393,7 +393,8 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 	u32 retries = SCAI_NAND_FIFO_TIMEOUT;
 
 	do {
-		status = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS1);
+		// status = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS1);
+		status = readl(priv->regs + SCAI_QSPI_REG_STATUS1);
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
