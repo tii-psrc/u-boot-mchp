@@ -771,7 +771,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	dev_err(mtd->dev, "Write: scai_nand_mtd_write_oob() called\n");
 		
 	// Clear Write Protect in FPGA controller
-	priv->ctrl1_sw_copy |= CTRL1_WP_ENABLE;
+	priv->ctrl1_sw_copy |= CTRL1_NWP;
 
 	nanddev_io_for_each_page(nand, to, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
@@ -841,9 +841,9 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	}
 	
 	scai_nand_write_disable(priv);
-	
+
 	// Set Write Protect in FPGA controller
-	priv->ctrl1_sw_copy &= ~CTRL1_WP_ENABLE;
+	priv->ctrl1_sw_copy &= ~CTRL1_NWP;
 
 	ops->retlen = ops->len - iter.dataleft;
 	ops->oobretlen = ops->ooblen - iter.oobleft;
