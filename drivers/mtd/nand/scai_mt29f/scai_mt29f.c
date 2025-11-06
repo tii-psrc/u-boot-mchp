@@ -571,7 +571,6 @@ static int scai_nand_block_erase(struct scai_nand_priv *priv, int page_addr)
 
 	dev_err(priv->mtd.dev, "Erasing block at page address: 0x%06X\n", page_addr);
 
-	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
 	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
