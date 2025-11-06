@@ -55,6 +55,7 @@
 #define STATUS1_IDLE                BIT(0)
 
 /* --- MT29F Flash Command Opcodes --- */
+#define MT29F_CMD_WRITE_DISABLE         0x04
 #define MT29F_CMD_WRITE_ENABLE          0x06
 #define MT29F_CMD_GET_FEATURES          0x0F
 #define MT29F_CMD_SET_FEATURES          0x1F
