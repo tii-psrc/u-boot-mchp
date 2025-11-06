@@ -9,7 +9,7 @@
 
 #include <linux/bitops.h> /* For BIT() */
 
-#define SCAI_NAND_FIFO_TIMEOUT 1000
+#define SCAI_NAND_FIFO_TIMEOUT 100000
 #define SCAI_NAND_FIFO_LENGTH  64
 
 // Constants for packing a byte into a 32-bit word for the hardware.
