@@ -592,18 +592,13 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 
 /**
  * scai_nand_mtd_erase() - MTD erase hook
- *
- * This function is the bridge between the MTD layer's erase request
- * and the generic NAND device layer's erase function.
  */
 static int scai_nand_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 {
-	struct nand_device *nand = mtd_to_nanddev(mtd);
-
 	dev_err(mtd->dev, "Debug: scai_nand_mtd_erase() called.\n");
 
 	/* Pass the call to the generic NAND helper */
-	return nanddev_mtd_erase(nand, instr);
+	return nanddev_mtd_erase(mtd, instr);
 }
 
 static int scai_nand_op_erase(struct nand_device *nand,
