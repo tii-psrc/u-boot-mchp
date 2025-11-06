@@ -783,8 +783,12 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 
 		/* Load page data */
 		if (iter.req.datalen) {
+			dev_err(mtd->dev, "Write: Load data - we\n");
 			ret = scai_nand_write_enable(priv);
-			if (ret) break;
+			if (ret) {
+				break;
+			}
+			dev_err(mtd->dev, "Write: Load data - program load\n");
 			ret = scai_nand_program_load(priv, iter.req.dataoffs,
 						     iter.req.databuf.out,
 						     iter.req.datalen,
