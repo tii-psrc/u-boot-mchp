@@ -840,6 +840,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		}
 	}
 	
+	scai_nand_write_disable(priv);
+	
 	// Set Write Protect in FPGA controller
 	priv->ctrl1_sw_copy &= ~CTRL1_WP_ENABLE;
 
