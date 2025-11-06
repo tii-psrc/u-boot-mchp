@@ -513,10 +513,14 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 
 	/* Send command (x1, Byte mode), keep CE active */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+	dev_err(priv->mtd.dev, "Program Load: word_mode = %d, quad mode = %d\n",
+		use_word_mode, priv->is_quad);
 	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
 	if (ret) {
 		return ret;
 	}
+
+	dev_err(priv->mtd.dev, "< \n");
 	
 	/* Set mode for data */
 	if (priv->is_quad) {
