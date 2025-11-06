@@ -152,7 +152,7 @@ static int scai_nand_reset_device(struct scai_nand_priv *priv)
 	const u8 cmd = MT29F_CMD_RESET_DEVICE;
 	int ret;
 
-	ret = scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false, false);
+	ret = scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false);
 	if (ret)
 		return ret;
 
