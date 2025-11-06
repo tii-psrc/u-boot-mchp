@@ -74,8 +74,6 @@ static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
 				      u8 *rx_buf, u32 rx_len_elems,
 				      bool keep_ce);
 /* --- Low-level QSPI controller functions --- */
-
-// ==================== VERIFIED ====================
 static int scai_nand_get_feature(struct scai_nand_priv *priv, u8 feature, u8 *value)
 {
 	const u8 cmd[] = { MT29F_CMD_GET_FEATURES, feature };
@@ -202,7 +200,7 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
 
 		do {
-			// status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+			status2_word = readl(priv->regs + SCAI_QSPI_REG_STATUS2);
 			if (!(status2_word & STATUS2_TX_FIFO_FULL)) {
 				break; /* Free space available, exit wait loop */
 			}
@@ -236,7 +234,7 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 				data_to_write |= ~SCAI_QSPI_FIFO_TX_BYTE_MASK;
 			}
 			
-			scai_set_reg(priv->regs, SCAI_QSPI_REG_DATA, data_to_write);
+			writel(data_to_write, priv->regs + SCAI_QSPI_REG_DATA);
 			elements_written++;
 		}
 	}
@@ -306,11 +304,10 @@ static int scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_e
 	ctrl1 &= ~(CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
 	ctrl1 |= CTRL1_TX_COUNT(tx_len_elems) | CTRL1_RX_COUNT(rx_len_elems);
 	ctrl1 |= CTRL1_START;
-	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 
-	/* HSS quirk: Set CE in a separate write */
 	ctrl1 |= CTRL1_CHIP_ENABLE;
-	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 	priv->ctrl1_sw_copy = ctrl1;
 
 	return 0;
@@ -321,33 +318,21 @@ static void scai_nand_finish_transaction(struct scai_nand_priv *priv, bool keep_
 	u32 ctrl1 = priv->ctrl1_sw_copy;
 
 	ctrl1 &= ~(CTRL1_START | CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
-	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	if (!keep_ce) {
 		ctrl1 &= ~CTRL1_CHIP_ENABLE;
-		scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, ctrl1);
+		writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 	}
 	priv->ctrl1_sw_copy = ctrl1;
 }
-// =============================================================
 
-/**
- * @brief Waits for the QSPI controller to be idle, using a "fast" poll.
- *
- * This function uses a tight, "hot" busy-wait loop with no delays,
- * exactly like the HSS driver. This is CRITICAL for all transactions.
- *
- * @param priv Private driver data
- * @return 0 on success, -ETIMEDOUT on timeout
- */
 static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 {
 	u32 status;
-	/* Use a hot-loop as seen in HSS qspi_fpga_wait_idle */
 	u32 retries = SCAI_NAND_FIFO_TIMEOUT;
 
 	do {
-		// status = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS1);
 		status = readl(priv->regs + SCAI_QSPI_REG_STATUS1);
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
@@ -588,10 +573,8 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 		return;
 	}
 
-	// val1 = scai_get_reg(priv->gpio1_regs, GPIO_REG_RDATA_OFFSET);
-	val1 = 0;
-	// val2 = scai_get_reg(priv->gpio2_regs, GPIO_REG_RDATA_OFFSET);
-	val2 = 0;
+	val1 = 0; // readl(priv->gpio1_regs + GPIO_REG_RDATA_OFFSET);
+	val2 = 0; // readl(priv->gpio2_regs + GPIO_REG_RDATA_OFFSET);
 
 	if (enable) {
 		val1 |= GPIO1_ENA_SS1_MASK;
@@ -601,8 +584,8 @@ static void scai_nand_set_power(struct scai_nand_priv *priv, bool enable)
 		val2 &= ~GPIO2_ENA_SS2_MASK;
 	}
 
-	scai_set_reg(priv->gpio1_regs, GPIO_REG_WDATA_OFFSET, val1);
-	scai_set_reg(priv->gpio2_regs, GPIO_REG_WDATA_OFFSET, val2);
+	writel(val1, priv->gpio1_regs + GPIO_REG_WDATA_OFFSET);
+	writel(val2, priv->gpio2_regs + GPIO_REG_WDATA_OFFSET);
 }
 
 /* --- MTD NAND Callbacks --- */
@@ -874,7 +857,7 @@ static int scai_nand_probe(struct udevice *dev)
 	}
 
 	dev_err(dev, "GPIO_1 mapped to VA: %p, Value: 0x%08X\n",
-             priv->gpio1_regs, scai_get_reg(priv->gpio1_regs, GPIO_REG_RDATA_OFFSET));
+             priv->gpio1_regs, readl(priv->gpio1_regs + GPIO_REG_RDATA_OFFSET));
 
 	/* Map GPIO_2 control registers */
 	priv->gpio2_regs = dev_remap_addr_index(dev, 2);
@@ -884,7 +867,7 @@ static int scai_nand_probe(struct udevice *dev)
 	}
 
 	dev_err(dev, "GPIO_2 mapped to VA: %p, Value: 0x%08X\n",
-             priv->gpio2_regs, scai_get_reg(priv->gpio2_regs, GPIO_REG_RDATA_OFFSET));
+             priv->gpio2_regs, readl(priv->gpio2_regs + GPIO_REG_RDATA_OFFSET));
 
 	/* Enable flash power via custom GPIO logic */
 	scai_nand_set_power(priv, true);
@@ -908,7 +891,7 @@ static int scai_nand_probe(struct udevice *dev)
 	/* Initial CTRL1 software copy - Set RESET high */
 	priv->ctrl1_sw_copy = CTRL1_RESET; /* nReset = 1 */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, priv->ctrl1_sw_copy);
+	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	/* Reset the flash chip */
 	ret = scai_nand_reset_device(priv);
