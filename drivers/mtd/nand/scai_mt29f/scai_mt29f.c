@@ -615,7 +615,6 @@ static int scai_nand_op_erase(struct nand_device *nand,
 	if (ret)
 		return ret;
 
-	/* Reset controller to x1 mode for command */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
 	ret = scai_nand_write_enable(priv);
@@ -701,7 +700,7 @@ static const struct nand_ops scai_nand_ops = {
 static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 				  struct mtd_oob_ops *ops)
 {
-	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_device *nand    = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
@@ -764,11 +763,13 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 				   struct mtd_oob_ops *ops)
 {
-	struct nand_device *nand = mtd_to_nanddev(mtd);
+	struct nand_device *nand    = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
 	bool use_word_mode_data = priv->is_quad && ((nand->memorg.pagesize % 4) == 0);
+
+	dev_err(mtd->dev, "Write: scai_nand_mtd_write_oob() called\n");
 
 	nanddev_io_for_each_page(nand, to, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
@@ -777,6 +778,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		ret = scai_nand_select_die(priv, pos->target);
 		if (ret)
 			break;
+
+		dev_err(mtd->dev, "Write: Load data\n");
 
 		/* Load page data */
 		if (iter.req.datalen) {
@@ -790,6 +793,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 			ret = scai_nand_wait_flash_ready(priv);
 			if (ret) break;
 		}
+		
+		dev_err(mtd->dev, "Write: Load OOB data\n");
 
 		/* Load OOB data */
 		if (iter.req.ooblen) {
@@ -806,15 +811,16 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 		}
 
 		/* Execute program */
-		/* Reset controller to x1 mode for command */
-		priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
+		dev_err(mtd->dev, "Write: WE\n");
 		ret = scai_nand_write_enable(priv);
 		if (ret) break;
 
+		dev_err(mtd->dev, "Write: Execute programming\n");
 		ret = scai_nand_program_execute(priv, row);
 		if (ret) break;
 
+		dev_err(mtd->dev, "Write: Wait OiP\n");
 		ret = scai_nand_wait_flash_ready(priv);
 		if (ret) break;
 	}
