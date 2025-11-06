@@ -41,6 +41,7 @@
 #include <linux/dma-mapping.h>
 #include <asm/arch/clk.h>
 #include <linux/errno.h>
+#include <linux/bitops.h>
 
 #include "macb.h"
 
@@ -1194,12 +1195,61 @@ static struct macb_config default_gem_config = {
 	.usrio = &macb_default_usrio,
 };
 
+#if defined(CONFIG_TARGET_SCAI_DPU) && defined(CONFIG_PHY_MSCC)
+#define APB_BASE_ADDRESS    0x40000000UL
+#define GPIOs_BASE_ADDRESS  (APB_BASE_ADDRESS + 0x0100L)
+
+#define GPIOs0_BASE_ADDRESS (GPIOs_BASE_ADDRESS +  0)
+#define GPIOs1_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 16)
+#define GPIOs2_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 32)
+#define GPIOs3_BASE_ADDRESS (GPIOs_BASE_ADDRESS + 48)
+
+#define N9_ETH_PG 20
+#define L5_ETH_COMA_MODE 2
+#define M9_ETH_nReset 3
+#define R2_ETH_MDINT 17
+#define A18_PWR_ETH_ENA 2
+
+static int scai_dpu_gpio_config(unsigned int gpio_num, unsigned int mask, unsigned int mode)
+{
+	volatile unsigned int *gpio_addr[4] = {
+		(unsigned int *)GPIOs0_BASE_ADDRESS,
+		(unsigned int *)GPIOs1_BASE_ADDRESS,
+		(unsigned int *)GPIOs2_BASE_ADDRESS,
+		(unsigned int *)GPIOs3_BASE_ADDRESS
+	};
+	unsigned int data = 0;
+
+	data = *gpio_addr[gpio_num];
+	log_debug("[pre]\tdata : 0x%08X @0x%p\n", data, (void *)gpio_addr[gpio_num]);
+
+	if (mode == 0) //clear bit
+		data &= ~mask;
+	else if (mode == 1) //enabled bit
+		data |= mask;
+	else if (mode == 2) //read bit
+		return (data &= mask);
+	else
+		printf("%s: unknown request (%d)...\n", __func__, mode);
+
+	*gpio_addr[gpio_num] = data;
+
+	data = *gpio_addr[gpio_num];
+	log_debug("[post]\tdata : 0x%08X @0x%p\n", data, (void *)gpio_addr[gpio_num]);
+
+	return 0;
+}
+#endif
+
 static int macb_eth_probe(struct udevice *dev)
 {
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct macb_device *macb = dev_get_priv(dev);
 	struct ofnode_phandle_args phandle_args;
 	int ret;
+#if defined(CONFIG_TARGET_SCAI_DPU) && defined(CONFIG_PHY_MSCC)
+	int pg_data = 0;
+#endif
 
 	macb->phy_interface = dev_read_phy_mode(dev);
 	if (macb->phy_interface == PHY_INTERFACE_MODE_NA)
@@ -1210,8 +1260,10 @@ static int macb_eth_probe(struct udevice *dev)
 					&phandle_args))
 		macb->phy_addr = ofnode_read_u32_default(phandle_args.node,
 							 "reg", -1);
+  log_debug("macb->phy_addr : 0x%08X\n", (unsigned int)macb->phy_addr);
 
 	macb->regs = (void *)(uintptr_t)pdata->iobase;
+  log_debug("macb->regs : 0x%p\n", macb->regs);
 
 	macb->is_big_endian = (cpu_to_be32(0x12345678) == 0x12345678);
 
@@ -1223,6 +1275,24 @@ static int macb_eth_probe(struct udevice *dev)
 		}
 		macb->config = &default_gem_config;
 	}
+
+#if defined(CONFIG_TARGET_SCAI_DPU) && defined(CONFIG_PHY_MSCC)
+	scai_dpu_gpio_config(1, BIT(A18_PWR_ETH_ENA), 0);
+	scai_dpu_gpio_config(0, BIT(M9_ETH_nReset), 0);
+
+	mdelay(30);
+	scai_dpu_gpio_config(1, BIT(A18_PWR_ETH_ENA), 1);
+
+	scai_dpu_gpio_config(0, BIT(L5_ETH_COMA_MODE), 0);
+
+	do {
+		mdelay(10);
+		pg_data = scai_dpu_gpio_config(0, BIT(N9_ETH_PG), 2);
+		printf("%s, PG : 0x%08X\n", __func__, pg_data);
+	} while (pg_data == 0);
+
+	scai_dpu_gpio_config(0, BIT(M9_ETH_nReset), 1);
+#endif
 
 #ifdef CONFIG_CLK
 	ret = macb_enable_clk(dev);
@@ -1244,6 +1314,7 @@ static int macb_eth_probe(struct udevice *dev)
 	if (ret < 0)
 		return ret;
 	macb->bus = miiphy_get_dev_by_name(dev->name);
+	log_debug("dev->name : %s\n", dev->name);
 #endif
 
 	return 0;

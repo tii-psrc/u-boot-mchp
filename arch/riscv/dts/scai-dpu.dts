@@ -18,7 +18,7 @@
 
 	aliases {
 		serial1 = &uart1;
-		ethernet0 = &mac1;
+		ethernet0 = &mac0;
 		spi0 = &qspi;
 	};
 
@@ -193,12 +193,12 @@
 	};
 };
 
-&mac1 {
-	status = "disabled";
-	phy-mode = "sgmii";
-	phy-handle = <&phy1>;
-	phy1: ethernet-phy@9 {
-		reg = <9>;
+&mac0 {
+	status = "okay";
+	phy-mode = "mii";
+	phy-handle = <&phy0>;
+	phy0: ethernet-phy@0 {
+		reg = <0>;
 	};
 };
 
