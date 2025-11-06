@@ -265,6 +265,19 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 	return elements_written;
 }
 
+static u32 scai_nand_fifo_read_sergio(struct scai_nand_priv *priv,
+			       void* rx_buffer,
+			       u32 rx_len)
+{
+	u32  status2_word  = 0;
+	u32  elements_read = 0;
+	bool is_word       = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
+	u32  quantity      = 0;
+
+	status2_word = readl(priv->regs + SCAI_QSPI_REG_STATUS2);
+
+}
+
 static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 			       void* rx_buffer,
 			       u32 rx_len)
@@ -273,7 +286,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 	u32  elements_read = 0;
 	bool is_word       = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
 
-	u8* buf8          = (u8*)  rx_buffer;
+	u8* buf8           = (u8*)  rx_buffer;
 	u32* buf32         = (u32*) rx_buffer;
 	
 	/* Handle NULL buffer for dummy reads (HSS quirk) */
@@ -288,9 +301,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 
 		/* Wait for data in Rx FIFO */
 		do {
-			/* Debug: Check if we are stuck polling STATUS2 */
-			/* dev_err(priv->mtd.dev, "FIFO Read: Polling STATUS2\n"); */
-			status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+			status2_word = readl(priv->regs + SCAI_QSPI_REG_STATUS2);
 			if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
 				break; /* Data is available, exit the wait loop. */
 			}
@@ -303,8 +314,8 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		}
 
 		/* Determine how much data can be read */
-		u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
-				      STATUS2_RX_FIFO_RdCnt_SHIFT;
+		u32 words_available = (status2_word >> STATUS2_RX_FIFO_RdCnt_SHIFT) &
+				      STATUS2_RX_FIFO_RdCnt_MASK;
 		u32 chunk_size = rx_len - elements_read;
 		if (chunk_size > words_available) {
 			chunk_size = words_available;
@@ -312,32 +323,18 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 
 		/* Read data */
 		for (u32 i = 0; i < chunk_size; ++i) {
-			u32 value = scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
+			u32 value = readl(priv->regs + SCAI_QSPI_REG_DATA);
 
 			if (is_dummy_read) {
 				/* Discard the value */
 			} else if (is_word) {
 				buf32[elements_read] = value;
 			} else {
-				// As per softcore example, extract the LSB for byte-wise reads.
 				buf8[elements_read] = (u8)(value & SCAI_QSPI_FIFO_RX_BYTE_MASK);
 			}
 			elements_read++;
 		}
 	}
-
-	/* Clean up FIFO */
-	//status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
-//
-	//if (!(status2_word & STATUS2_RX_FIFO_EMPTY)) {
-	//	u32 words_available = (status2_word & STATUS2_RX_FIFO_RdCnt_MASK) >>
-	//			      STATUS2_RX_FIFO_RdCnt_SHIFT;
-	//	dev_warn(priv->mtd.dev, "Draining %u unexpected words from RX FIFO\n",
-	//		 words_available);
-	//	for (u32 i = 0; i < words_available; ++i) {
-	//		scai_get_reg(priv->regs, SCAI_QSPI_REG_DATA);
-	//	}
-	//}
 
 	return elements_read;
 }

@@ -40,7 +40,7 @@
 /* --- SCAI QSPI Controller Status2 Register Bits --- */
 #define STATUS2_RX_FIFO_FULL         BIT(0)
 #define STATUS2_RX_FIFO_EMPTY		 BIT(1)
-#define STATUS2_RX_FIFO_RdCnt_MASK   0x07
+#define STATUS2_RX_FIFO_RdCnt_MASK   0x7F
 #define STATUS2_RX_FIFO_RdCnt_SHIFT  2
 #define STATUS2_RX_FIFO_WrCnt_MASK   0x070
 #define STATUS2_RX_FIFO_WrCnt_SHIFT  9
