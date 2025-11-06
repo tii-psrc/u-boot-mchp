@@ -76,19 +76,6 @@ static int scai_nand_exec_transaction(struct scai_nand_priv *priv,
 /* --- Low-level QSPI controller functions --- */
 
 // ==================== VERIFIED ====================
-static void scai_set_reg(void __iomem *base, u32 offset, u32 value)
-{
-	// printf("W 0x%08X : 0x%08X\n", base + offset, value);
-	writel(value, base + offset);
-}
-
-static u32 scai_get_reg(void __iomem *base, u32 offset)
-{
-	u32 val = readl(base + offset);
-	// printf("R 0x%08X : 0x%08X\n", base + offset, val);
-	return val;
-}
-
 static int scai_nand_get_feature(struct scai_nand_priv *priv, u8 feature, u8 *value)
 {
 	const u8 cmd[] = { MT29F_CMD_GET_FEATURES, feature };
@@ -97,7 +84,7 @@ static int scai_nand_get_feature(struct scai_nand_priv *priv, u8 feature, u8 *va
 
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
-	ret =scai_nand_exec_transaction(priv, cmd, sizeof(cmd), &val, sizeof(val), false);
+	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), &val, sizeof(val), false);
 	*value = val;
 	return ret;
 }
@@ -160,18 +147,18 @@ static int scai_nand_unlock_all_blocks(struct scai_nand_priv *priv)
 	return scai_nand_set_feature(priv, MT29F_REG_LOCK, MT29F_UNLOCK_ALL);
 }
 
-// static int scai_nand_reset_device(struct scai_nand_priv *priv)
-// {
-// 	const u8 cmd = MT29F_CMD_RESET_DEVICE;
-// 	int ret;
-// 
-// 	ret = scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false, false);
-// 	if (ret)
-// 		return ret;
-// 
-// 	priv->current_die = 0; /* Resetting chip resets die select to 0 */
-// 	return scai_nand_wait_flash_ready(priv);
-// }
+static int scai_nand_reset_device(struct scai_nand_priv *priv)
+{
+	const u8 cmd = MT29F_CMD_RESET_DEVICE;
+	int ret;
+
+	ret = scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false, false);
+	if (ret)
+		return ret;
+
+	priv->current_die = 0;
+	return scai_nand_wait_flash_ready(priv);
+}
 
 static int scai_read_id(struct scai_nand_priv *priv, u8 *jedec_ids, u32 len)
 {
@@ -208,20 +195,14 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 	u32 elements_written = 0;
 	bool  is_word        = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
 
-	const u8* buf8      = (const u8*) tx_buffer;
+	const u8* buf8       = (const u8*) tx_buffer;
 	const u32* buf32     = (const u32*)tx_buffer;
-
-	/* Handle NULL buffer for dummy writes (HSS quirk) */
-	if (!tx_buffer) {
-		buf8 = NULL;
-		buf32 = NULL;
-	}
 
 	while (elements_written < tx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
-		/* Check for free space in FIFO */
+
 		do {
-			status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
+			// status2_word = scai_get_reg(priv->regs, SCAI_QSPI_REG_STATUS2);
 			if (!(status2_word & STATUS2_TX_FIFO_FULL)) {
 				break; /* Free space available, exit wait loop */
 			}
@@ -247,11 +228,9 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 			u32 data_to_write = 0;
 
 			if (is_word) {
-				/* For dummy write, buf32 is NULL, so we write 0 */
-				data_to_write = buf32 ? buf32[elements_written] : 0;
+				data_to_write = buf32[elements_written];
 			} else {
-				/* For dummy write, buf8 is NULL, so we write 0 */
-				data_to_write = (((u32)(buf8 ? buf8[elements_written] : 0)) <<
+				data_to_write = (((u32)(buf8[elements_written])) <<
 						 SCAI_QSPI_FIFO_BYTE_SHIFT) &
 						SCAI_QSPI_FIFO_TX_BYTE_MASK;
 				data_to_write |= ~SCAI_QSPI_FIFO_TX_BYTE_MASK;
@@ -265,19 +244,6 @@ static u32 scai_nand_fifo_write(struct scai_nand_priv *priv,
 	return elements_written;
 }
 
-static u32 scai_nand_fifo_read_sergio(struct scai_nand_priv *priv,
-			       void* rx_buffer,
-			       u32 rx_len)
-{
-	u32  status2_word  = 0;
-	u32  elements_read = 0;
-	bool is_word       = (priv->ctrl1_sw_copy & CTRL1_DATA_MODE_WORD) != 0;
-	u32  quantity      = 0;
-
-	status2_word = readl(priv->regs + SCAI_QSPI_REG_STATUS2);
-
-}
-
 static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 			       void* rx_buffer,
 			       u32 rx_len)
@@ -289,12 +255,7 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 	u8* buf8           = (u8*)  rx_buffer;
 	u32* buf32         = (u32*) rx_buffer;
 	
-	/* Handle NULL buffer for dummy reads (HSS quirk) */
 	bool is_dummy_read = (rx_buffer == NULL);
-	if (is_dummy_read) {
-		buf8 = NULL;
-		buf32 = NULL;
-	}
 
 	while (elements_read < rx_len) {
 		u32 timeout_counter = SCAI_NAND_FIFO_TIMEOUT;
@@ -309,13 +270,12 @@ static u32 scai_nand_fifo_read(struct scai_nand_priv *priv,
 		} while (timeout_counter > 0);
 
 		if (timeout_counter == 0) {
-			dev_err(priv->mtd.dev, "Rx FIFO timeout %d, retried %d times\n", elements_read, SCAI_NAND_FIFO_TIMEOUT - timeout_counter);
+			dev_err(priv->mtd.dev, "Rx FIFO timeout.\n");
 			return elements_read;
 		}
 
 		/* Determine how much data can be read */
-		u32 words_available = (status2_word >> STATUS2_RX_FIFO_RdCnt_SHIFT) &
-				      STATUS2_RX_FIFO_RdCnt_MASK;
+		u32 words_available = (status2_word >> STATUS2_RX_FIFO_RDCNT_SHIFT) & STATUS2_RX_FIFO_RDCNT_MASK;
 		u32 chunk_size = rx_len - elements_read;
 		if (chunk_size > words_available) {
 			chunk_size = words_available;
@@ -608,6 +568,8 @@ static int scai_nand_block_erase(struct scai_nand_priv *priv, int page_addr)
 	cmd[1] = (page_addr >> 16) & 0xFF; /* Row Addr 2 (local) */
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
+
+	dev_err(priv->mtd.dev, "Erasing block at page address: 0x%06X\n", page_addr);
 
 	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
@@ -903,7 +865,7 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	dev_err(dev, "7 QSPI_REG mapped to VA: %p\n", priv->regs);
+	dev_err(dev, "8 QSPI_REG mapped to VA: %p\n", priv->regs);
 
 	/* Map GPIO_1 control registers */
 	priv->gpio1_regs = dev_remap_addr_index(dev, 1);
@@ -950,11 +912,11 @@ static int scai_nand_probe(struct udevice *dev)
 	scai_set_reg(priv->regs, SCAI_QSPI_REG_CTRL1, priv->ctrl1_sw_copy);
 
 	/* Reset the flash chip */
-	// ret = scai_nand_reset_device(priv);
-	// if (ret) {
-	// 	dev_err(dev, "Failed to reset device on probe\n");
-	// 	goto err_power_off;
-	// }
+	ret = scai_nand_reset_device(priv);
+	if (ret) {
+		dev_err(dev, "Failed to reset device on probe\n");
+		goto err_power_off;
+	}
 
 	ret = scai_nand_init_device(priv);
 	if (ret) {
