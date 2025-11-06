@@ -346,6 +346,7 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
+		udelay(1);
 		retries--;
 	} while (retries > 0);
 
