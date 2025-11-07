@@ -340,12 +340,14 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 {
 	u32 status;
 	u32 retries = SCAI_NAND_FIFO_TIMEOUT;
+	u32 buf[4] = {0};
 
 	do {
 		status = readl(priv->regs + SCAI_QSPI_REG_STATUS1);
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
+		scai_nand_fifo_write(priv, buf, sizeof(buf)); /* Try to flush Tx FIFO */
 		ndelay(10);
 		retries--;
 	} while (retries > 0);
@@ -793,7 +795,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 			if (ret) {
 				break;
 			}
-			dev_err(mtd->dev, "Write: Load data - program load, len=%d, col=%d\n",
+			iter.req.datalen = 64; // Debug: limit to 64 bytes
+			dev_err(mtd->dev, "Write: len=%d, col=%d\n",
 				iter.req.datalen, iter.req.dataoffs);
 			ret = scai_nand_program_load(priv, iter.req.dataoffs,
 						     iter.req.databuf.out,
