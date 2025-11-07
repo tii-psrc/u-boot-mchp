@@ -346,7 +346,7 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
-		mdelay(1);
+		ndelay(100);
 		retries--;
 	} while (retries > 0);
 
@@ -523,10 +523,6 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 	/* Set mode for data */
 	if (priv->is_quad) {
 		priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-	} else if (use_word_mode) {
-		priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
-	} else {
-		priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
 	}
 	
 	/* Send data for programming, release CE */
