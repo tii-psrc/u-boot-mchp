@@ -509,8 +509,8 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 	u32 tx_elements = (use_word_mode ? ((len_bytes + 3) / 4) : len_bytes);
 
 	cmd[0] = priv->is_quad ? MT29F_CMD_PROGRAM_LOAD_X4 : MT29F_CMD_PROGRAM_LOAD_X1;
-	cmd[1] = (col >> 8) & 0xFF; /* Column address MSB */
-	cmd[2] = col & 0xFF;        /* Column address LSB */
+	cmd[1] = (u8)((col >> 8) & 0xFF); /* Column address MSB */
+	cmd[2] = (u8)(col & 0xFF);        /* Column address LSB */
 
 	/* Send command (x1, Byte mode), keep CE active */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
@@ -766,10 +766,12 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	int ret = 0;
 	bool use_word_mode_data = priv->is_quad && ((nand->memorg.pagesize % 4) == 0);
 
-	dev_err(mtd->dev, "Write: scai_nand_mtd_write_oob() called\n");
-		
+	dev_err(mtd->dev, "Write: scai_nand_mtd_write_oob() called, use_word_mode_data=%d\n",
+		use_word_mode_data);
+
 	// Clear Write Protect in FPGA controller
 	priv->ctrl1_sw_copy |= CTRL1_NWP;
+	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	nanddev_io_for_each_page(nand, to, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
@@ -789,7 +791,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 			if (ret) {
 				break;
 			}
-			dev_err(mtd->dev, "Write: Load data - program load\n");
+			dev_err(mtd->dev, "Write: Load data - program load, len=%d, col=%d\n",
+				iter.req.datalen, iter.req.dataoffs);
 			ret = scai_nand_program_load(priv, iter.req.dataoffs,
 						     iter.req.databuf.out,
 						     iter.req.datalen,
@@ -841,7 +844,8 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 	scai_nand_write_disable(priv);
 
 	// Set Write Protect in FPGA controller
-	priv->ctrl1_sw_copy &= ~CTRL1_NWP;
+	priv->ctrl1_sw_copy &= ~CTRL1_NWP;	
+	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	ops->retlen = ops->len - iter.dataleft;
 	ops->oobretlen = ops->ooblen - iter.oobleft;
