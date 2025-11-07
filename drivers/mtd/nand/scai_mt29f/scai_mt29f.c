@@ -346,7 +346,7 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
-		ndelay(100);
+		ndelay(10);
 		retries--;
 	} while (retries > 0);
 
@@ -507,6 +507,8 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 	u8 cmd[3];
 	int ret;
 	u32 tx_elements = (use_word_mode ? ((len_bytes + 3) / 4) : len_bytes);
+	dev_err(priv->mtd.dev, "Program load: word_mode = %d, quad mode = %d, tx_elements=%d\n",
+		use_word_mode, priv->is_quad, tx_elements);
 
 	cmd[0] = priv->is_quad ? MT29F_CMD_PROGRAM_LOAD_X4 : MT29F_CMD_PROGRAM_LOAD_X1;
 	cmd[1] = (u8)((col >> 8) & 0xFF); /* Column address MSB */
