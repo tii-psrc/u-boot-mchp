@@ -795,7 +795,7 @@ static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 			if (ret) {
 				break;
 			}
-			iter.req.datalen = 2048; // Debug: limit to 64 bytes
+			//iter.req.datalen = 2048; // Debug: limit to 2048 bytes
 			dev_err(mtd->dev, "Write: len=%d, col=%d\n",
 				iter.req.datalen, iter.req.dataoffs);
 			ret = scai_nand_program_load(priv, iter.req.dataoffs,
