@@ -105,15 +105,6 @@ static int scai_nand_write_enable(struct scai_nand_priv *priv)
 	return scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false);
 }
 
-static int scai_nand_write_disable(struct scai_nand_priv *priv)
-{
-	const u8 cmd = MT29F_CMD_WRITE_DISABLE;
-
-	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-
-	return scai_nand_exec_transaction(priv, &cmd, sizeof(cmd), NULL, 0, false);
-}
-
 static int scai_nand_wait_flash_ready(struct scai_nand_priv *priv)
 {
 	u8 status = 0;
@@ -340,15 +331,12 @@ static int scai_nand_wait_idle(struct scai_nand_priv *priv)
 {
 	u32 status;
 	u32 retries = SCAI_NAND_FIFO_TIMEOUT;
-	u32 buf[4] = {0};
 
 	do {
 		status = readl(priv->regs + SCAI_QSPI_REG_STATUS1);
 		if (status & STATUS1_IDLE) {
 			return 0; /* Success */
 		}
-		scai_nand_fifo_write(priv, buf, sizeof(buf)); /* Try to flush Tx FIFO */
-		ndelay(10);
 		retries--;
 	} while (retries > 0);
 
@@ -509,24 +497,33 @@ static int scai_nand_program_load(struct scai_nand_priv *priv, u16 col, const u8
 	u8 cmd[3];
 	int ret;
 	u32 tx_elements = (use_word_mode ? ((len_bytes + 3) / 4) : len_bytes);
-	dev_err(priv->mtd.dev, "Program load: word_mode = %d, quad mode = %d, tx_elements=%d\n",
-		use_word_mode, priv->is_quad, tx_elements);
 
 	cmd[0] = priv->is_quad ? MT29F_CMD_PROGRAM_LOAD_X4 : MT29F_CMD_PROGRAM_LOAD_X1;
-	cmd[1] = (u8)((col >> 8) & 0xFF); /* Column address MSB */
-	cmd[2] = (u8)(col & 0xFF);        /* Column address LSB */
+	cmd[1] = (col >> 8) & 0xFF; /* Column address MSB */
+	cmd[2] = col & 0xFF; /* Column address LSB */
 
-	/* Send command (x1, Byte mode), keep CE active */
+	/*
+	 * HSS Code Analysis (`SCAI_MT29_Flash_program`):
+	 * The HSS driver does NOT perform a "dummy write". It sends the
+	 * command, then immediately sets the mode (x4/Word) and sends
+	 * the real data. We will replicate that logic here.
+	 */
+
+	/* Phase 1: Send PROGRAM LOAD command (x1, Byte mode), keep CE active */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-
 	ret = scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, true);
-	if (ret) {
+	if (ret)
 		return ret;
-	}
+
+	/* Phase 2: Real Write (Data phase) */
 	
-	/* Set mode for data */
+	/* Set mode for data phase */
 	if (priv->is_quad) {
 		priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+	} else if (use_word_mode) {
+		priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
+	} else {
+		priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
 	}
 	
 	/* Send data for programming, release CE */
@@ -542,7 +539,9 @@ static int scai_nand_program_execute(struct scai_nand_priv *priv, int page_addr)
 	cmd[2] = (page_addr >> 8) & 0xFF;  /* Row Addr 1 (local) */
 	cmd[3] = page_addr & 0xFF;         /* Row Addr 0 (local) */
 
+	/* This is a standalone command, use x1/Byte mode */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
+
 	return scai_nand_exec_transaction(priv, cmd, sizeof(cmd), NULL, 0, false);
 }
 
@@ -616,6 +615,7 @@ static int scai_nand_op_erase(struct nand_device *nand,
 	if (ret)
 		return ret;
 
+	/* Reset controller to x1 mode for command */
 	priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
 	ret = scai_nand_write_enable(priv);
@@ -701,7 +701,7 @@ static const struct nand_ops scai_nand_ops = {
 static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 				  struct mtd_oob_ops *ops)
 {
-	struct nand_device *nand    = mtd_to_nanddev(mtd);
+	struct nand_device *nand = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
@@ -764,93 +764,60 @@ static int scai_nand_mtd_read_oob(struct mtd_info *mtd, loff_t from,
 static int scai_nand_mtd_write_oob(struct mtd_info *mtd, loff_t to,
 				   struct mtd_oob_ops *ops)
 {
-	struct nand_device *nand    = mtd_to_nanddev(mtd);
+	struct nand_device *nand = mtd_to_nanddev(mtd);
 	struct scai_nand_priv *priv = container_of(nand, struct scai_nand_priv, nand);
 	struct nand_io_iter iter;
 	int ret = 0;
 	bool use_word_mode_data = priv->is_quad && ((nand->memorg.pagesize % 4) == 0);
 
-	dev_err(mtd->dev, "Write: scai_nand_mtd_write_oob() called, use_word_mode_data=%d\n",
-		use_word_mode_data);
-
-	// Clear Write Protect in FPGA controller
-	priv->ctrl1_sw_copy |= CTRL1_NWP;
-	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
-
 	nanddev_io_for_each_page(nand, to, ops, &iter) {
 		const struct nand_pos *pos = &iter.req.pos;
 		int row = nanddev_pos_to_row(nand, pos);
-		
-		ret = scai_nand_select_die(priv, pos->target);
-		if (ret) {
-			break;
-		}
 
-		dev_err(mtd->dev, "Write: Load data, row = %d\n", row);
+		ret = scai_nand_select_die(priv, pos->target);
+		if (ret)
+			break;
 
 		/* Load page data */
 		if (iter.req.datalen) {
-			dev_err(mtd->dev, "Write: Load data - we\n");
 			ret = scai_nand_write_enable(priv);
-			if (ret) {
-				break;
-			}
-			//iter.req.datalen = 2048; // Debug: limit to 2048 bytes
-			dev_err(mtd->dev, "Write: len=%d, col=%d\n",
-				iter.req.datalen, iter.req.dataoffs);
+			if (ret) break;
 			ret = scai_nand_program_load(priv, iter.req.dataoffs,
 						     iter.req.databuf.out,
 						     iter.req.datalen,
 						     use_word_mode_data);
-			if (ret) {
-				break;
-			}
+			if (ret) break;
+			ret = scai_nand_wait_flash_ready(priv);
+			if (ret) break;
 		}
-		
-		dev_err(mtd->dev, "Write: Load OOB data\n");
 
 		/* Load OOB data */
 		if (iter.req.ooblen) {
 			u16 col = nand->memorg.pagesize + iter.req.ooboffs;
 			ret = scai_nand_write_enable(priv);
-			if (ret) {
-				break;
-			}
+			if (ret) break;
 			ret = scai_nand_program_load(priv, col,
 						     iter.req.oobbuf.out,
 						     iter.req.ooblen,
 						     false); /* Force byte mode for OOB */
-			if (ret) {
-				break;
-			}
+			if (ret) break;
+			ret = scai_nand_wait_flash_ready(priv);
+			if (ret) break;
 		}
 
 		/* Execute program */
+		/* Reset controller to x1 mode for command */
+		priv->ctrl1_sw_copy &= ~(CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
 
-		dev_err(mtd->dev, "Write: WE\n");
 		ret = scai_nand_write_enable(priv);
-		if (ret) {
-			break;
-		}
+		if (ret) break;
 
-		dev_err(mtd->dev, "Write: Execute programming\n");
 		ret = scai_nand_program_execute(priv, row);
-		if (ret) {
-			break;
-		}
+		if (ret) break;
 
-		dev_err(mtd->dev, "Write: Wait OiP\n");
 		ret = scai_nand_wait_flash_ready(priv);
-		if (ret) {
-			break;
-		}
+		if (ret) break;
 	}
-	
-	scai_nand_write_disable(priv);
-
-	// Set Write Protect in FPGA controller
-	priv->ctrl1_sw_copy &= ~CTRL1_NWP;	
-	writel(priv->ctrl1_sw_copy, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	ops->retlen = ops->len - iter.dataleft;
 	ops->oobretlen = ops->ooblen - iter.oobleft;
