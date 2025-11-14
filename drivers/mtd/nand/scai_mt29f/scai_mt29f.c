@@ -842,7 +842,7 @@ static int scai_nand_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	dev_err(dev, "8 QSPI_REG mapped to VA: %p\n", priv->regs);
+	dev_err(dev, "9 QSPI_REG mapped to VA: %p\n", priv->regs);
 
 	/* Map GPIO_1 control registers */
 	priv->gpio1_regs = dev_remap_addr_index(dev, 1);
