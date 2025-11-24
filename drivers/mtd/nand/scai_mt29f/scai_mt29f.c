@@ -304,7 +304,7 @@ static int scai_nand_start_transaction(struct scai_nand_priv *priv, u32 tx_len_e
 	ctrl1 &= ~(CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
 	ctrl1 |= CTRL1_TX_COUNT(tx_len_elems) | CTRL1_RX_COUNT(rx_len_elems);
 	ctrl1 |= CTRL1_START;
-	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
+	//writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	ctrl1 |= CTRL1_CHIP_ENABLE;
 	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
@@ -318,12 +318,13 @@ static void scai_nand_finish_transaction(struct scai_nand_priv *priv, bool keep_
 	u32 ctrl1 = priv->ctrl1_sw_copy;
 
 	ctrl1 &= ~(CTRL1_START | CTRL1_TX_COUNT(0x7FF) | CTRL1_RX_COUNT(0x7FF));
-	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
+	//writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 
 	if (!keep_ce) {
 		ctrl1 &= ~CTRL1_CHIP_ENABLE;
-		writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 	}
+
+	writel(ctrl1, priv->regs + SCAI_QSPI_REG_CTRL1);
 	priv->ctrl1_sw_copy = ctrl1;
 }
 
