@@ -172,8 +172,10 @@ static int scai_nand_init_device(struct scai_nand_priv *priv)
 	ret = scai_nand_get_feature(priv, MT29F_REG_CONFIG, &config_reg);
 	if (ret)
 		return ret;
+	dev_err(priv->mtd.dev, "[pre]\tConfiguration (0x%02X)\n", config_reg);
 
 	config_reg |= CONFIG_CONTINUOUS;
+	config_reg |= STATUS_ECC_EN;
 	ret = scai_nand_set_feature(priv, MT29F_REG_CONFIG, config_reg);
 	if (ret)
 		return ret;
@@ -181,6 +183,11 @@ static int scai_nand_init_device(struct scai_nand_priv *priv)
 	ret = scai_nand_unlock_all_blocks(priv);
 	if (ret)
 		return ret;
+
+	ret = scai_nand_get_feature(priv, MT29F_REG_CONFIG, &config_reg);
+	if (ret)
+		return ret;
+	dev_err(priv->mtd.dev, "[post]\tConfiguration (0x%02X)\n", config_reg);
 
 	return ret;
 }

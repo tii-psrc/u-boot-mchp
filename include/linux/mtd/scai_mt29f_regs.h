@@ -83,5 +83,6 @@
 /* --- MT29F Status Register Bits --- */
 #define STATUS_OIP_BIT                  BIT(0) /* Operation In Progress */
 #define CONFIG_CONTINUOUS               BIT(0) /* Continuous Read Mode */
+#define STATUS_ECC_EN                   BIT(4) /* ECC ENABLE */
 
 #endif /* __MCHP_SCAI_NAND_REGS_H */
