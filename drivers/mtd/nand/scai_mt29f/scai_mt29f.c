@@ -437,7 +437,7 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 	cmd[3] = 0x00; /* dummy byte */
 
 	/*
-	 * This operation is a 3-phase transaction specific to the HSS driver
+	 * This operation is a 2-phase transaction specific to the HSS driver
 	 * logic to handle the SCAI QSPI controller quirk.
 	 */
 
@@ -448,46 +448,18 @@ static int scai_nand_read_from_cache(struct scai_nand_priv *priv, u16 col, u8 *b
 	if (ret)
 		return ret;
 
-	/*
-	 * Phase 2: Dummy Read (HSS SCAI Quirk)
-	 * This transaction must run EVEN IF col == 0 (dummy_rx_len_words == 0)
-	 * because it is responsible for switching the hardware controller
-	 * into QSPI / Word mode *before* Phase 3 begins.
-	 */
+	/* Phase 2: Real Read (Data phase) */
+
+	/* Set mode for data phase */
 	if (priv->is_quad) {
-		/* HSS code does (col_addr >> 2) */
-		u32 dummy_rx_len_words = (col >> 2);
-
-		/* Switch to Quad, Word mode for dummy read */
 		priv->ctrl1_sw_copy |= (CTRL1_LANE_WIDTH_X4 | CTRL1_DATA_MODE_WORD);
-
-		/*
-		 * Execute dummy read. Pass NULL as rx_buf to discard data.
-		 * Keep CE active.
-		 */
-		dev_err(priv->mtd.dev, "Phase 2 - dummy read %u words\n", dummy_rx_len_words);
-		ret = scai_nand_exec_transaction(priv, NULL, 0,
-					   buf, dummy_rx_len_words,
-					   true);
-		if (ret)
-			return ret;
-
-		for (u32 i = 0; i < dummy_rx_len_words; ++i) {
-			dev_err(priv->mtd.dev, "buf[%u] = 0x%08X (dummy)\n", i, ((u32*)buf)[i]);
-		}
+	} else if (use_word_mode) {
+		priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
+	} else {
+		priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
 	}
 
-	/* Phase 3: Real Read (Data phase) */
-	/* Controller is already in correct mode (x1/Byte or x4/Word) from Phase 2 */
-	/* If not quad, ensure we are in the mode requested by the caller */
-	if (!priv->is_quad) {
-		if (use_word_mode)
-			priv->ctrl1_sw_copy |= CTRL1_DATA_MODE_WORD;
-		else
-			priv->ctrl1_sw_copy &= ~CTRL1_DATA_MODE_WORD;
-	}
-
-	dev_err(priv->mtd.dev, "Phase 3 - real read %d words\n", rx_elements);
+	dev_err(priv->mtd.dev, "Phase 2 - real read %d words\n", rx_elements);
 	return scai_nand_exec_transaction(priv, NULL, 0, buf, rx_elements, false);
 }
 
