@@ -7,19 +7,28 @@
 /dts-v1/;
 
 #include "microchip-mpfs.dtsi"
+#include "scai-navc-fabric.dtsi"
 
 /* Clock frequency (in Hz) of the rtcclk */
 #define RTCCLK_FREQ		1000000
 
 / {
-        model = "TII SpacecraftAI NAVigation Computer (NAVC)";
+	model = "TII SpacecraftAI NAVigation Computer (NAVC)";
 	compatible = "microchip,mpfs-icicle-reference-rtlv2210",
-		     "microchip,mpfs-icicle-kit", "microchip,mpfs";
+	             "microchip,mpfs-icicle-kit", "microchip,mpfs";
 
 	aliases {
 		serial1 = &uart1;
 		ethernet0 = &mac1;
 		spi0 = &qspi;
+		spi1 = &fabric_qspi0;
+		spi2 = &fabric_qspi1;
+		spi3 = &fabric_qspi2;
+		spi4 = &fabric_qspi3;
+		spi5 = &fabric_qspi4;
+		spi6 = &fabric_qspi5;
+		spi7 = &fabric_qspi6;
+		spi8 = &fabric_qspi7;
 	};
 
 	chosen {
@@ -134,80 +143,6 @@
 		sync-mode = <3>;
 	};
 
-
-	/* ===                 SCAI MT29F Flash Definitions               === */
-	scai_nand_0: nand-controller@40000400 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000400 0x0 0x10>,  /* QSPI Chip 0 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4; /* Use Quad SPI */
-		status = "okay";
-	};
-
-	scai_nand_1: nand-controller@40000410 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000410 0x0 0x10>,  /* QSPI Chip 1 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_2: nand-controller@40000420 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000420 0x0 0x10>,  /* QSPI Chip 2 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_3: nand-controller@40000430 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000430 0x0 0x10>,  /* QSPI Chip 3 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_4: nand-controller@40000500 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000500 0x0 0x10>,  /* QSPI Chip 4 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_5: nand-controller@40000510 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000510 0x0 0x10>,  /* QSPI Chip 5 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_6: nand-controller@40000520 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000520 0x0 0x10>,  /* QSPI Chip 6 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-
-	scai_nand_7: nand-controller@40000530 {
-		compatible = "navc,scai-qspi-mt29f";
-		reg = <0x0 0x40000530 0x0 0x10>,  /* QSPI Chip 7 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		spi-tx-bus-width-4;
-		status = "okay";
-	};
-	/* === end of SCAI MT29F Flash Definitions            ===  */
 };
 
 &refclk {
@@ -296,5 +231,125 @@
 
 &syscontroller {
 	status = "okay";
+};
+
+&fabric_qspi0 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash1: flash@1 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi1 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash2: flash@2 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi2 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash3: flash@3 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi3 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash4: flash@4 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi4 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash5: flash@5 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi5 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash6: flash@6 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi6 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash7: flash@7 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi7 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash8: flash@8 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
 };
 

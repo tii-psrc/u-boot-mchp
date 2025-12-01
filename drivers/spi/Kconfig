@@ -242,6 +242,12 @@ config MICROCHIP_COREQSPI
 	  Enable the QSPI driver for Microchip FPGA QSPI controllers.
 	  This driver can be used on Polarfire SoC.
 
+config SCAI_FPGAQSPI
+	bool "SCAI FPGA QSPI Controller driver"
+	default y
+	help
+	  This enables support for SCAI FPGA QSPI controllers.
+
 config MPC8XX_SPI
 	bool "MPC8XX SPI Driver"
 	depends on MPC8xx
