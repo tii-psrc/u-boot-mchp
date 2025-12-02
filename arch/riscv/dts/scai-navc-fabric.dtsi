@@ -69,4 +69,12 @@
 		status = "disabled";
 	};
 
+	fabric_qspi9: fabric-qspi@40000310 {
+	  compatible = "scai-fpgaqspi,navc-backup-winbond";
+		reg = <0x0 0x40000310 0x0 0x10>,  /* QSPI Chip backup Winbond Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
 };

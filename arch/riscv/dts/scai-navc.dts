@@ -29,6 +29,7 @@
 		spi6 = &fabric_qspi5;
 		spi7 = &fabric_qspi6;
 		spi8 = &fabric_qspi7;
+		spi9 = &fabric_qspi9;
 	};
 
 	chosen {
@@ -343,6 +344,21 @@
 	num-cs = <1>;
 
 	flash8: flash@8 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+	};
+};
+
+&fabric_qspi9 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash10: flash@10 {
 		compatible = "spi-nand";
 		reg = <0x0>;
 		spi-tx-bus-width = <4>;

@@ -535,6 +535,7 @@ static const struct dm_spi_ops scai_fpgaqspi_ops = {
 
 static const struct udevice_id scai_fpgaqspi_of_match[] = {
 	{ .compatible = "scai-fpgaqspi,navc-mt29f" },
+	{ .compatible = "scai-fpgaqspi,navc-backup-winbond" },
 	{ /* sentinel */ }
 };
 
