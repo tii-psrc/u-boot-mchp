@@ -268,7 +268,7 @@ static int __do_exec_word_op(struct spi_slave *slave,
 	u32 total_tx_words, total_rx_words;
 	int err = 0;
 
-	if (op->data.buswidth == 4 || op->data.buswidth == 2) {
+	if (op->data.buswidth == 4) {
 		total_tx_words = 0;
 		total_rx_words = (op->data.nbytes + 3) / 4;
 		if (op->data.dir == SPI_MEM_DATA_OUT) {
@@ -285,7 +285,7 @@ static int __do_exec_word_op(struct spi_slave *slave,
 			p->rx_len = 0;
 			p->tx_len = op->data.nbytes;
 			scai_fpgaqspi_write_op(p, true);
-		} else {
+		} else if (op->data.dir == SPI_MEM_DATA_IN) {
 			p->tx_buf = NULL;
 			p->rx_buf = (u8 *)op->data.buf.in;
 			p->rx_len = op->data.nbytes;
@@ -305,12 +305,12 @@ static int __do_exec_byte_op(struct spi_slave *slave,
 	struct scai_fpgaqspi_priv *p = dev_get_priv(slave->dev->parent);
 	u32 address = op->addr.val;
 	u8 opcode = op->cmd.opcode;
-	u8 opaddr[5];
+	u8 opaddr[32];
 	u32 total_tx_bytes, total_rx_bytes;
 	int err = 0, i;
 
 	total_tx_bytes = op->cmd.nbytes + op->addr.nbytes + op->dummy.nbytes;
-	total_rx_bytes = op->data.nbytes;
+	total_rx_bytes = (op->data.buswidth == 1) ? op->data.nbytes : 0;
 	if (op->data.dir == SPI_MEM_DATA_OUT) {
 		total_tx_bytes += op->data.nbytes;
 		total_rx_bytes -= op->data.nbytes;
@@ -327,8 +327,9 @@ static int __do_exec_byte_op(struct spi_slave *slave,
 		scai_fpgaqspi_write_op(p, false);
 	}
 
-	p->tx_buf = &opaddr[0];
 	if (op->addr.nbytes) {
+		memset(opaddr, 0, sizeof(opaddr));
+		p->tx_buf = &opaddr[0];
 		for (i = 0; i < op->addr.nbytes; i++)
 			p->tx_buf[i] = address >> (8 * (op->addr.nbytes - i - 1));
 
@@ -339,13 +340,7 @@ static int __do_exec_byte_op(struct spi_slave *slave,
 	}
 
 	if (op->dummy.nbytes) {
-		/* Put dummy bytes */
-		for (i = 0; i < op->addr.nbytes; i++) {
-			if (i > sizeof(opaddr)) {
-				break;
-			}
-			opaddr[i] = 0;
-		}
+		memset(opaddr, 0, sizeof(opaddr));
 
 		p->tx_buf = &opaddr[0];
 		p->rx_buf = NULL;
@@ -361,7 +356,7 @@ static int __do_exec_byte_op(struct spi_slave *slave,
 			p->rx_len = 0;
 			p->tx_len = op->data.nbytes;
 			scai_fpgaqspi_write_op(p, false);
-		} else {
+		} else if (op->data.dir == SPI_MEM_DATA_IN) {
 			p->tx_buf = NULL;
 			p->rx_buf = (u8 *)op->data.buf.in;
 			p->rx_len = op->data.nbytes;
