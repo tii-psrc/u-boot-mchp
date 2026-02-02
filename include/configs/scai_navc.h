@@ -10,7 +10,7 @@
 #include <linux/sizes.h>
 
 #define CFG_SYS_SDRAM_BASE       0x80000000
-#define CFG_SYS_BAUDRATE_TABLE  { 115200, 921600 }
+#define CFG_SYS_BAUDRATE_TABLE  { 115200, 921600, 1000000, 1500000 }
 
 /* Environment options */
 

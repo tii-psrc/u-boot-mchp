@@ -34,7 +34,7 @@
 	};
 
 	chosen {
-		stdout-path = "serial1:921600n8";
+		stdout-path = "serial1:1500000n8";
 	};
 
 	cpus {
