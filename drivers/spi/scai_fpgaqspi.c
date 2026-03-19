@@ -19,6 +19,8 @@
 #include <spi.h>
 #include <spi-mem.h>
 
+#include <linux/byteorder/swab.h>
+
 #define SCAI_NAND_FIFO_TIMEOUT 100
 #define SCAI_NAND_FIFO_LENGTH  64
 
@@ -209,6 +211,7 @@ static int scai_fpgaqspi_read_op(struct scai_fpgaqspi_priv *p, bool word)
 			} while (status & STATUS2_RX_FIFO_EMPTY);
 
 			data = readl(p->regs + SCAI_QSPI_REG_DATA);
+			data = swab32(data);
 #if 0
 			debug("%s-word: data(0x%08X)\n", __func__, data);
 #endif
