@@ -7,6 +7,7 @@
 /dts-v1/;
 
 #include "microchip-mpfs.dtsi"
+#include "scai-dpu-fabric.dtsi"
 
 /* Clock frequency (in Hz) of the rtcclk */
 #define RTCCLK_FREQ		1000000
@@ -20,6 +21,7 @@
 		serial1 = &uart1;
 		ethernet0 = &mac0;
 		spi0 = &qspi;
+		spi1 = &fabric_qspi0;
 	};
 
 	chosen {
@@ -142,6 +144,51 @@
 		spi-max-frequency = <20000000>;
 		spi-cpol;
 		spi-cpha;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "payload_a";
+				reg = <0 0x00200000>;
+			};
+			partition@200000 {
+				label = "ubi_a";
+				reg = <0x00200000 0x07700000>;
+			};
+		};
+	};
+};
+
+&fabric_qspi0 {
+	status = "okay";
+	num-cs = <1>;
+
+	flash1: flash@1 {
+		compatible = "spi-nand";
+		reg = <0x0>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <20000000>;
+		spi-cpol;
+		spi-cpha;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "payload_b";
+				reg = <0 0x00200000>;
+			};
+			partition@200000 {
+				label = "ubi_b";
+				reg = <0x00200000 0x07700000>;
+			};
+		};
 	};
 };
 

@@ -1,0 +1,14 @@
+
+/ {
+
+	compatible = "microchip,mpfs-icicle-reference-rtlv2210",
+		     "microchip,mpfs-icicle-kit", "microchip,mpfs";
+
+
+	fabric_qspi0: fabric-qspi@40000510 {
+	  compatible = "scai-fpgaqspi,dpu-backup-w25";
+		reg = <0x0 0x40000510 0x0 0x10>;  /* backup w25 */
+		status = "disabled";
+	};
+
+};

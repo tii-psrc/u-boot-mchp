@@ -87,8 +87,10 @@
 struct scai_fpgaqspi_priv {
 	/* Register base addresses */
 	void __iomem	*regs;          /* QSPI register base */
+#if defined(CONFIG_TARGET_SCAI_NAVC)
 	void __iomem	*gpio1_regs;    /* GPIO1 register base */
 	void __iomem	*gpio2_regs;    /* GPIO2 register base */
+#endif
 
 	/* Software-maintained copies */
 	u32		 ctrl1_sw_copy;  /* Cached CTRL1 register value */
@@ -100,6 +102,7 @@ struct scai_fpgaqspi_priv {
 	int		 rx_len;        /* RX length */
 };
 
+#if defined(CONFIG_TARGET_SCAI_NAVC)
 static void scai_fpgaqspi_set_power(struct scai_fpgaqspi_priv *p,
 		bool enable)
 {
@@ -125,6 +128,8 @@ static void scai_fpgaqspi_set_power(struct scai_fpgaqspi_priv *p,
 	writel(val1, p->gpio1_regs + GPIO_REG_WDATA_OFFSET);
 	writel(val2, p->gpio2_regs + GPIO_REG_WDATA_OFFSET);
 }
+#endif
+
 static int scai_fpgaqspi_wait_for_ready(struct spi_slave *slave)
 {
 	struct scai_fpgaqspi_priv *p = dev_get_priv(slave->dev->parent);
@@ -490,15 +495,24 @@ static int scai_fpgaqspi_probe(struct udevice *dev)
 
 	/* Map QSPI and GPIO registers */
 	p->regs = dev_remap_addr_index(dev, 0);
+#if defined(CONFIG_TARGET_SCAI_NAVC)
 	p->gpio1_regs = dev_remap_addr_index(dev, 1);
 	p->gpio2_regs = dev_remap_addr_index(dev, 2);
+#endif
 
-	if (!p->regs || !p->gpio1_regs || !p->gpio2_regs) {
+	if (!p->regs) {
 		dev_err(dev, "Failed to map QSPI registers\n");
 		return -EINVAL;
 	}
+#if defined(CONFIG_TARGET_SCAI_NAVC)
+	if (!p->gpio1_regs || !p->gpio2_regs) {
+		dev_err(dev, "Failed to map QSPI registers\n");
+		return -EINVAL;
+	}
+#endif
 
 	dev_info(dev, "SCAI FPGA QSPI REG mapped to VA: %p\n", p->regs);
+#if defined(CONFIG_TARGET_SCAI_NAVC)
 	dev_info(dev, "GPIO1 mapped to VA: %p, Value: 0x%08X\n",
 			p->gpio1_regs, readl(p->gpio1_regs + GPIO_REG_RDATA_OFFSET));
 	dev_info(dev, "GPIO2 mapped to VA: %p, Value: 0x%08X\n",
@@ -506,6 +520,7 @@ static int scai_fpgaqspi_probe(struct udevice *dev)
 
 	scai_fpgaqspi_set_power(p, true);
 	dev_info(dev, "Enabled MT29F power via custom GPIOs\n");
+#endif
 
 	control = CTRL1_RESET;
 	p->ctrl1_sw_copy = control;
@@ -535,6 +550,7 @@ static const struct udevice_id scai_fpgaqspi_of_match[] = {
 	{ .compatible = "scai-fpgaqspi,navc-mt29f" },
 	{ .compatible = "scai-fpgaqspi,navc-backup-w25" },
 	{ .compatible = "scai-fpgaqspi,navc-nor" },
+	{ .compatible = "scai-fpgaqspi,dpu-backup-w25" },
 	{ /* sentinel */ }
 };
 
