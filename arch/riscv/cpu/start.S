@@ -148,7 +148,12 @@ call_harts_early_init:
 	mv      a0, s0
 	jal	board_init_f_init_reserve
 
+#if 0
 	SREG	s1, GD_FIRMWARE_FDT_ADDR(gp)
+#else
+	SREG	zero, GD_FIRMWARE_FDT_ADDR(gp)
+	SREG	s1, GD_ACTIVE_SLOT(gp)
+#endif
 	/* save the boot hart id to global_data */
 	SREG	tp, GD_BOOT_HART(gp)
 

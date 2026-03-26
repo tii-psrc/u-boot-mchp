@@ -489,6 +489,10 @@ struct global_data {
 	 * @dmtag_list: List of DM tags
 	 */
 	struct list_head dmtag_list;
+	/**
+	 * @env_active_slot: active_slot for storage
+	 */
+	phys_addr_t env_active_slot;
 };
 #ifndef DO_DEPS_ONLY
 static_assert(sizeof(struct global_data) == GD_SIZE);
