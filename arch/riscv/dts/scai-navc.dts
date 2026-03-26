@@ -29,8 +29,8 @@
 		spi6 = &fabric_qspi5;
 		spi7 = &fabric_qspi6;
 		spi8 = &fabric_qspi7;
-		spi9 = &fabric_qspi9;
-		spi10 = &fabric_qspi11;
+		spi9 = &fabric_qspi8;
+		spi10 = &fabric_qspi9;
 	};
 
 	chosen {
@@ -153,6 +153,21 @@
 		spi-max-frequency = <20000000>;
 		spi-cpol;
 		spi-cpha;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "payload_a";
+				reg = <0 0x00200000>;
+			};
+			partition@200000 {
+				label = "ubi_a";
+				reg = <0x00200000 0x07700000>;
+			};
+		};
 	};
 };
 
@@ -176,6 +191,21 @@
 		spi-max-frequency = <20000000>;
 		spi-cpol;
 		spi-cpha;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "payload_b";
+				reg = <0 0x00200000>;
+			};
+			partition@200000 {
+				label = "ubi_b";
+				reg = <0x00200000 0x07700000>;
+			};
+		};
 	};
 };
 
@@ -284,7 +314,7 @@
 	};
 };
 
-&fabric_qspi9 {
+&fabric_qspi8 {
 	status = "okay";
 	num-cs = <1>;
 
@@ -299,7 +329,7 @@
 	};
 };
 
-&fabric_qspi11 {
+&fabric_qspi9 {
 	status = "okay";
 	num-cs = <1>;
 

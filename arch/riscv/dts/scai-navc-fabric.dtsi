@@ -5,71 +5,7 @@
 		     "microchip,mpfs-icicle-kit", "microchip,mpfs";
 
 
-	fabric_qspi0: fabric-qspi@40000400 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000400 0x0 0x10>,  /* QSPI Chip 0 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi1: fabric-qspi@40000410 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000410 0x0 0x10>,  /* QSPI Chip 1 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi2: fabric-qspi@40000420 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000420 0x0 0x10>,  /* QSPI Chip 2 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi3: fabric-qspi@40000430 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000430 0x0 0x10>,  /* QSPI Chip 3 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi4: fabric-qspi@40000500 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000500 0x0 0x10>,  /* QSPI Chip 4 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi5: fabric-qspi@40000510 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000510 0x0 0x10>,  /* QSPI Chip 5 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi6: fabric-qspi@40000520 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000520 0x0 0x10>,  /* QSPI Chip 6 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi7: fabric-qspi@40000530 {
-	  compatible = "scai-fpgaqspi,navc-mt29f";
-		reg = <0x0 0x40000530 0x0 0x10>,  /* QSPI Chip 7 Address & Size */
-		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
-		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
-		status = "disabled";
-	};
-
-	fabric_qspi9: fabric-qspi@40000310 {
+	fabric_qspi0: fabric-qspi@40000310 {
 	  compatible = "scai-fpgaqspi,navc-backup-w25";
 		reg = <0x0 0x40000310 0x0 0x10>,  /* backup w25 */
 		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
@@ -77,7 +13,71 @@
 		status = "disabled";
 	};
 
-	fabric_qspi11: fabric-qspi@40000330 {
+	fabric_qspi1: fabric-qspi@40000400 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000400 0x0 0x10>,  /* QSPI Chip 0 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi2: fabric-qspi@40000410 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000410 0x0 0x10>,  /* QSPI Chip 1 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi3: fabric-qspi@40000420 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000420 0x0 0x10>,  /* QSPI Chip 2 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi4: fabric-qspi@40000430 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000430 0x0 0x10>,  /* QSPI Chip 3 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi5: fabric-qspi@40000500 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000500 0x0 0x10>,  /* QSPI Chip 4 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi6: fabric-qspi@40000510 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000510 0x0 0x10>,  /* QSPI Chip 5 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi7: fabric-qspi@40000520 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000520 0x0 0x10>,  /* QSPI Chip 6 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi8: fabric-qspi@40000530 {
+	  compatible = "scai-fpgaqspi,navc-mt29f";
+		reg = <0x0 0x40000530 0x0 0x10>,  /* QSPI Chip 7 Address & Size */
+		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
+		      <0x0 0x40000120 0x0 0x10>;   /* GPIO2 Base & Size (Common) */
+		status = "disabled";
+	};
+
+	fabric_qspi9: fabric-qspi@40000330 {
 	  compatible = "scai-fpgaqspi,navc-nor";
 		reg = <0x0 0x40000330 0x0 0x10>,  /* MT25QL02GCBB?? */
 		      <0x0 0x40000110 0x0 0x10>,   /* GPIO1 Base & Size (Common) */
