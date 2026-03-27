@@ -64,7 +64,8 @@
 	"set_bootargs=setenv bootargs ${bootargs_base} ubi.mtd=ubi_${active_slot}\0" \
 	"get_inactive=" \
 		"if test \"${active_slot}\" = \"a\"; then inactive_slot=b; " \
-		"else inactive_slot=a; fi\0" \
+		"else inactive_slot=a; fi; " \
+		"setenv active_slot ${inactive_slot}; \0" \
 	"boot_scripts=boot.scr\0" \
 	"boot_prefixes=/ /boot/\0" \
 	"boot_a_script=" \
@@ -99,11 +100,11 @@
 			"echo \"Using active_slot from HSS: ${active_slot}\"; " \
 		"else " \
 			"echo \"active_slot not set, using default\"; " \
-			"active_slot=${default_active_slot}; " \
+			"setenv active_slot ${default_active_slot}; " \
 		"fi; " \
 		"if test \"${active_slot}\" != \"a\" && test \"${active_slot}\" != \"b\"; then " \
 			"echo \"active_slot invalid, using default\"; " \
-			"active_slot=${default_active_slot}; " \
+			"setenv active_slot ${default_active_slot}; " \
 		"fi\0" \
 	"bootcmd_ubifs=" \
 		"run ensure_active_slot; " \
@@ -113,6 +114,7 @@
 		"run bootcmd_ubifs_slot; " \
 		"echo === [BOOT] FAILOVER ===; " \
 		"run get_inactive; " \
+		"run set_bootargs; " \
 		"slot=${inactive_slot}; " \
 		"run bootcmd_ubifs_slot;\0" \
 	"boot_targets=ubifs\0" \
