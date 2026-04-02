@@ -165,31 +165,31 @@
 			};
 			partition@200000 {
 				label = "ubi_a";
-				reg = <0x00200000 0x02000000>;
+				reg = <0x00200000 0x01E00000>;
+			};
+			partition@2000000 {
+				label = "payload_b";
+				reg = <0x02000000 0x00200000>;
 			};
 			partition@2200000 {
-				label = "payload_b";
-				reg = <0x02200000 0x00200000>;
-			};
-			partition@2400000 {
 				label = "ubi_b";
-				reg = <0x02400000 0x02000000>;
+				reg = <0x02200000 0x01E00000>;
 			};
-			partition@2600000 {
+			partition@4000000 {
 				label = "payload_c";
-				reg = <0x02600000 0x00200000>;
+				reg = <0x04000000 0x00200000>;
 			};
-			partition@2800000 {
+			partition@4200000 {
 				label = "ubi_c";
-				reg = <0x02800000 0x02000000>;
-			};
-			partition@4800000 {
-				label = "payload_d";
-				reg = <0x04800000 0x00200000>;
+				reg = <0x04200000 0x01E00000>;
 			};
 			partition@6000000 {
+				label = "payload_d";
+				reg = <0x06000000 0x00200000>;
+			};
+			partition@6200000 {
 				label = "ubi_d";
-				reg = <0x06000000 0x02000000>;
+				reg = <0x06200000 0x01E00000>;
 			};
 		};
 	};
