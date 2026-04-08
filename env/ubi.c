@@ -40,6 +40,12 @@ static const char *get_env_active_slot(void)
 	switch (*ptr) {
 		case 'a':
 		case 'b':
+		case 'c':
+		case 'd':
+		case 'e':
+		case 'f':
+		case 'g':
+		case 'h':
 			slot[0] = *ptr;
 			slot[1] = '\0';
 			break;
