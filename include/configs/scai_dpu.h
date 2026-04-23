@@ -94,7 +94,7 @@
 		"echo Booting slot ${slot}; " \
 		"bootubipart=ubi_${slot}; bootubivol=rootfs; bootubioff=; " \
 		"run ubifs_boot;\0" \
-	"default_active_slot=a\0" \
+	"default_active_slot=b\0" \
 	"ensure_active_slot=" \
 		"if env exists active_slot; then " \
 			"echo \"Using active_slot from HSS: ${active_slot}\"; " \
