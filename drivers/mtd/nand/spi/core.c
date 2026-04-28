@@ -426,7 +426,7 @@ static int spinand_wait(struct spinand_device *spinand, u8 *s)
 	int ret;
 
 	start = get_timer(0);
-	stop = 400;
+	stop = 4000;
 	do {
 		ret = spinand_read_status(spinand, &status);
 		if (ret)
