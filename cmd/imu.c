@@ -151,30 +151,36 @@ static struct scai_imu_priv imu[SCAI_IMU_COUNT] = {
 	},
 };
 
-static int do_imu_init(void)
+static int do_imu_init(struct cmd_tbl *cmdtp, int flag, int argc,
+		char *const argv[])
 {
-	int i;
+	enum scai_imu_id id;
 
-	for (i = 0; i < SCAI_IMU_COUNT; i++) {
-		scai_navc_gpio_config(imu[i].power_switch.gpio,
-				BIT(imu[i].power_switch.pin), 0);
+	if (argc < 2 || argc > 2)
+		return CMD_RET_USAGE;
 
-		imu[i].regs = phys_to_virt(imu[i].phys);
-		imu[i].ctrl[0] = I_CTRL_ENA_MASK | (20<<I_CTRL_S_DIV) |
+	id = (enum scai_imu_id)hextoul(argv[0], NULL);
+	do {
+		scai_navc_gpio_config(imu[id].power_switch.gpio,
+				BIT(imu[id].power_switch.pin), 0);
+
+		imu[id].regs = phys_to_virt(imu[id].phys);
+		imu[id].ctrl[0] = I_CTRL_ENA_MASK | (20<<I_CTRL_S_DIV) |
 			I_CTRL_nINT_MASK|I_CTRL_PS0_MASK | I_CTRL_nBOOT_MASK  |
 			I_CTRL_nRST_MASK | I_CTRL_CE_MASK;
-		imu[i].ctrl[1] = I_CTRL2_CLK_LEVEL_MASK; 
-		imu[i].ctrl[2] = 0;
+		imu[id].ctrl[1] = I_CTRL2_CLK_LEVEL_MASK;
+		imu[id].ctrl[2] = 0;
 
-		scai_navc_gpio_config(imu[i].power_switch.gpio,
-				BIT(imu[i].power_switch.pin), 1);
+		scai_navc_gpio_config(imu[id].power_switch.gpio,
+				BIT(imu[id].power_switch.pin), 1);
 
-		writel(imu[i].ctrl[0], imu[i].regs + I_WR_CTRL1);
-		writel(imu[i].ctrl[1], imu[i].regs + I_WR_CTRL2);
-		writel(imu[i].ctrl[2], imu[i].regs + I_WR_CTRL3);
-	}
+		writel(imu[id].ctrl[0], imu[id].regs + I_WR_CTRL1);
+		writel(imu[id].ctrl[1], imu[id].regs + I_WR_CTRL2);
+		writel(imu[id].ctrl[2], imu[id].regs + I_WR_CTRL3);
+	} while (0);
+	printf("%s init finished ...\n", imu[id].name);
 
-	return 0;
+	return CMD_RET_SUCCESS;
 }
 
 static int do_imu_list(struct cmd_tbl *cmdtp, int flag, int argc,
@@ -198,7 +204,9 @@ static int do_imu_list(struct cmd_tbl *cmdtp, int flag, int argc,
 
 static char imu_help_text[] =
 	"- generic operations on imu devices\n\n"
-	"imu list\n";
+	"imu list\n"
+	"mtd init <dev>\n";
 
 U_BOOT_CMD_WITH_SUBCMDS(imu, "IMU utils", imu_help_text,
-		U_BOOT_SUBCMD_MKENT(list, 1, 1, do_imu_list));
+		U_BOOT_SUBCMD_MKENT(list, 1, 1, do_imu_list),
+		U_BOOT_SUBCMD_MKENT(init, 2, 0, do_imu_init));
