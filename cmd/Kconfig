@@ -2849,3 +2849,11 @@ config CMD_MESON
 	help
 	  Enable useful commands for the Meson Soc family developed by Amlogic Inc.
 endmenu
+
+config CMD_IMU
+	bool "imu"
+	depends on IMU
+	help
+	  IMU commands support.
+
+
