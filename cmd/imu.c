@@ -159,7 +159,12 @@ static int do_imu_init(struct cmd_tbl *cmdtp, int flag, int argc,
 	if (argc < 2 || argc > 2)
 		return CMD_RET_USAGE;
 
-	id = (enum scai_imu_id)hextoul(argv[0], NULL);
+	id = (enum scai_imu_id)hextoul(argv[1], NULL);
+	if (id != SCAI_IMU_NOM || id != SCAI_IMU_RED) {
+		printf("Wrong id(%d) ...\n", id);
+		return CMD_RET_USAGE;
+	}
+
 	do {
 		scai_navc_gpio_config(imu[id].power_switch.gpio,
 				BIT(imu[id].power_switch.pin), 0);
