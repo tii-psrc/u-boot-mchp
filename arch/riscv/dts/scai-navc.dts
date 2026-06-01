@@ -18,7 +18,7 @@
 	             "microchip,mpfs-icicle-kit", "microchip,mpfs";
 
 	aliases {
-		serial1 = &uart1;
+		serial3 = &uart3;
 		ethernet0 = &mac1;
 		spi0 = &qspi;
 		spi1 = &fabric_qspi0;
@@ -34,7 +34,7 @@
 	};
 
 	chosen {
-		stdout-path = "serial1:1500000n8";
+		stdout-path = "serial3:1500000n8";
 	};
 
 	cpus {
@@ -99,6 +99,12 @@
 &uart1 {
 	status = "okay";
 };
+
+&uart3 {
+	status = "okay";
+};
+
+
 
 &i2c1 {
 	status = "disabled";
