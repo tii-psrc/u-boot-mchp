@@ -77,7 +77,7 @@
 #define GPIO1_ENA_SS1_MASK      BIT(4)
 #define GPIO2_ENA_SS2_MASK      BIT(0)
 
-#define TIMEOUT_MS             (1000 * 500)
+#define TIMEOUT_MS             (1000 * 1000 * 5)
 
 #define MAX_DATA_CMD_LEN       0x440
 
