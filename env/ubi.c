@@ -244,7 +244,7 @@ static int env_ubi_load(void)
 	if (ret)
 		return ret;
 
-	return p_boot_info->__boot_device != 0 ?
+	return p_boot_info->__boot_device ?
 		env_set("boot_device", get_env_boot_device()) : ret;
 #endif
 }
@@ -290,8 +290,8 @@ static int env_ubi_load(void)
 		env_set("active_slot", get_env_active_slot()) : ret;
 	if (ret)
 		return ret;
-###
-	return p_boot_info->__boot_device != 0 ?
+
+	return p_boot_info->__boot_device ?
 		env_set("boot_device", get_env_boot_device()) : ret;
 #endif
 }
