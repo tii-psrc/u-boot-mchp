@@ -152,7 +152,9 @@ call_harts_early_init:
 	SREG	s1, GD_FIRMWARE_FDT_ADDR(gp)
 #else
 	SREG	zero, GD_FIRMWARE_FDT_ADDR(gp)
-	SREG	s1, GD_ACTIVE_SLOT(gp)
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+	SREG	s1, GD_PRIVATE_BOOT_INFO(gp)
+#endif
 #endif
 	/* save the boot hart id to global_data */
 	SREG	tp, GD_BOOT_HART(gp)
