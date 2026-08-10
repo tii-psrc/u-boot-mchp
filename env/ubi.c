@@ -91,7 +91,7 @@ static const char *get_env_active_slot(void)
 	return slot;
 }
 
-static const char *get_env_ubipart_name(void)
+static char *get_env_ubipart_name(void)
 {
 	static char ubipart_name[16];
 	const char *slot;
