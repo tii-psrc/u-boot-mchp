@@ -80,7 +80,7 @@ static const char *get_env_active_slot(void)
 			printf("gd->env_p_boot_info->__active_slot raw: 0x%08X\n",
 					(uint32_t)p_boot_info->__active_slot);
 			printf("slot addr: 0x%p, value: 0x%02x\n",
-					(uint32_t)ptr, *ptr);
+					(void *)ptr, *ptr);
 			printf("Invalid slot value: 0x%02x\n", *ptr);
 
 			slot[0] = '?';
@@ -96,7 +96,7 @@ static const char *get_env_ubipart_name(void)
 	static char ubipart_name[16];
 	const char *slot;
 
-	if (!gd->env_p_boot_info->__active_slot)
+	if (!gd->env_p_boot_info)
 		return CONFIG_ENV_UBI_PART;
 
 	slot = get_env_active_slot();
@@ -236,12 +236,15 @@ static int env_ubi_load(void)
 		return ret;
 
 #if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
-	ret = gd->env_p_boot_info->__active_slot != 0 ?
+	struct boot_info *p_boot_info =
+		(struct boot_info *)(uintptr_t)gd->env_p_boot_info;
+
+	ret = p_boot_info->__active_slot != 0 ?
 		env_set("active_slot", get_env_active_slot()) : ret;
 	if (ret)
 		return ret;
 
-	return gd->env_p_boot_info->__boot_device != 0 ?
+	return p_boot_info->__boot_device != 0 ?
 		env_set("boot_device", get_env_boot_device()) : ret;
 #endif
 }
@@ -280,12 +283,15 @@ static int env_ubi_load(void)
 		return ret;
 
 #if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
-	ret = gd->env_p_boot_info->__active_slot != 0 ?
+	struct boot_info *p_boot_info =
+		(struct boot_info *)(uintptr_t)gd->env_p_boot_info;
+
+	ret = p_boot_info->__active_slot != 0 ?
 		env_set("active_slot", get_env_active_slot()) : ret;
 	if (ret)
 		return ret;
-
-	return gd->env_p_boot_info->__boot_device != 0 ?
+###
+	return p_boot_info->__boot_device != 0 ?
 		env_set("boot_device", get_env_boot_device()) : ret;
 #endif
 }
