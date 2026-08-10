@@ -489,10 +489,12 @@ struct global_data {
 	 * @dmtag_list: List of DM tags
 	 */
 	struct list_head dmtag_list;
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
 	/**
-	 * @env_active_slot: active_slot for storage
+	 * @env_p_boot_info: private_boot_info
 	 */
-	phys_addr_t env_active_slot;
+	phys_addr_t env_p_boot_info;
+#endif
 };
 #ifndef DO_DEPS_ONLY
 static_assert(sizeof(struct global_data) == GD_SIZE);

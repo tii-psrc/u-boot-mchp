@@ -28,14 +28,47 @@
 
 DECLARE_GLOBAL_DATA_PTR;
 
-static const char *get_env_active_slot(void)
-{
-	static char slot[2];
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+struct boot_info {
+	uint8_t __boot_device[4];
+	uint32_t __active_slot;
 
-	if (!gd->env_active_slot)
+	uint8_t reserved[504];
+};
+#endif
+
+static const char *get_env_boot_device(void)
+{
+	static char default_boot_dev[4] = { '?', '?', '?', '\0' };
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+	if (!gd->env_p_boot_info)
 		return NULL;
 
-	char *ptr = (char *)gd->env_active_slot;
+	struct boot_info *p_boot_info = (struct boot_info *)gd->env_p_boot_info;
+
+	if (!memcmp(p_boot_info->__boot_device, "nom", 3) ||
+	    !memcmp(p_boot_info->__boot_device, "red", 3)) {
+		p_boot_info->__boot_device[3] = '\0';
+		printf("boot_device : %s\n", p_boot_info->__boot_device);
+
+		return p_boot_info->__boot_device;
+	}
+#endif
+
+	return default_boot_dev;
+}
+
+static const char *get_env_active_slot(void)
+{
+	static char slot[2] = { 0 };
+
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+	if (!gd->env_p_boot_info)
+		return NULL;
+
+	struct boot_info *p_boot_info = (struct boot_info *)gd->env_p_boot_info;
+
+	char *ptr = (char *)&p_boot_info->__active_slot;
 
 	switch (*ptr) {
 		case 'a':
@@ -44,25 +77,26 @@ static const char *get_env_active_slot(void)
 			slot[1] = '\0';
 			break;
 		default:
-			printf("env_active_slot raw: 0x%lx\n",
-					(unsigned long)gd->env_active_slot);
-			printf("slot addr: 0x%lx, value: 0x%02x\n",
-					(unsigned long)ptr, *ptr);
+			printf("gd->env_p_boot_info->__active_slot raw: 0x%08X\n",
+					(uint32_t)p_boot_info->__active_slot);
+			printf("slot addr: 0x%p, value: 0x%02x\n",
+					(void *)ptr, *ptr);
 			printf("Invalid slot value: 0x%02x\n", *ptr);
 
 			slot[0] = '?';
 			slot[1] = '\0';
 	}
+#endif
 
 	return slot;
 }
 
-static const char *get_env_ubipart_name(void)
+static char *get_env_ubipart_name(void)
 {
 	static char ubipart_name[16];
 	const char *slot;
 
-	if (!gd->env_active_slot)
+	if (!gd->env_p_boot_info)
 		return CONFIG_ENV_UBI_PART;
 
 	slot = get_env_active_slot();
@@ -201,8 +235,18 @@ static int env_ubi_load(void)
 	if (ret)
 		return ret;
 
-	return gd->env_active_slot != 0 ?
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+	struct boot_info *p_boot_info =
+		(struct boot_info *)(uintptr_t)gd->env_p_boot_info;
+
+	ret = p_boot_info->__active_slot != 0 ?
 		env_set("active_slot", get_env_active_slot()) : ret;
+	if (ret)
+		return ret;
+
+	return p_boot_info->__boot_device ?
+		env_set("boot_device", get_env_boot_device()) : ret;
+#endif
 }
 #else /* ! CONFIG_SYS_REDUNDAND_ENVIRONMENT */
 static int env_ubi_load(void)
@@ -238,8 +282,18 @@ static int env_ubi_load(void)
 	if (ret)
 		return ret;
 
-	return gd->env_active_slot != 0 ?
+#if defined(CONFIG_TARGET_SCAI_DPU) || defined(CONFIG_TARGET_SCAI_NAVC)
+	struct boot_info *p_boot_info =
+		(struct boot_info *)(uintptr_t)gd->env_p_boot_info;
+
+	ret = p_boot_info->__active_slot != 0 ?
 		env_set("active_slot", get_env_active_slot()) : ret;
+	if (ret)
+		return ret;
+
+	return p_boot_info->__boot_device ?
+		env_set("boot_device", get_env_boot_device()) : ret;
+#endif
 }
 #endif /* CONFIG_SYS_REDUNDAND_ENVIRONMENT */
 
