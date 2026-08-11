@@ -52,6 +52,15 @@ static const char *get_env_boot_device(void)
 		printf("boot_device : %s\n", p_boot_info->__boot_device);
 
 		return p_boot_info->__boot_device;
+	} else {
+		printf("Unknown boot_device : %c(0x%02X)\n",
+				p_boot_info->__boot_device[0], p_boot_info->__boot_device[0]);
+		printf("Unknown boot_device : %c(0x%02X)\n",
+				p_boot_info->__boot_device[1], p_boot_info->__boot_device[1]);
+		printf("Unknown boot_device : %c(0x%02X)\n",
+				p_boot_info->__boot_device[2], p_boot_info->__boot_device[2]);
+		printf("Unknown boot_device : %c(0x%02X)\n",
+				p_boot_info->__boot_device[3], p_boot_info->__boot_device[3]);
 	}
 #endif
 
