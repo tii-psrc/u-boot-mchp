@@ -61,7 +61,7 @@
 	"bootargs_base=earlycon console=ttyS1,921600n8 " \
 		"uio_pdrv_genirq.of_id=generic-uio " \
 		"root=ubi0:rootfs rootfstype=ubifs rootwait rw\0" \
-	"set_bootargs=setenv bootargs ${bootargs_base} ubi.mtd=ubi_${active_slot}\0" \
+	"set_bootargs=setenv bootargs ${bootargs_base} ubi.mtd=ubi_${active_slot} boot_device=${boot_device}\0" \
 	"get_inactive=" \
 		"if test \"${active_slot}\" = \"a\"; then inactive_slot=b; " \
 		"else inactive_slot=a; fi; " \
@@ -106,8 +106,21 @@
 			"echo \"active_slot invalid, using default\"; " \
 			"setenv active_slot ${default_active_slot}; " \
 		"fi\0" \
+	"default_boot_device=def\0" \
+	"ensure_boot_device=" \
+		"if env exists boot_device; then " \
+			"echo \"Using boot_device from HSS: ${boot_device}\"; " \
+		"else " \
+			"echo \"boot_device not set, using default\"; " \
+			"setenv boot_device ${default_boot_device}; " \
+		"fi; " \
+		"if test \"${boot_device}\" != \"nom\" && test \"${boot_device}\" != \"red\"; then " \
+			"echo \"boot_device invalid, using default\"; " \
+			"setenv boot_device ${default_boot_device}; " \
+		"fi\0" \
 	"bootcmd_ubifs=" \
 		"run ensure_active_slot; " \
+		"run ensure_boot_device; " \
 		"run set_bootargs; " \
 		"echo === [BOOT] ACTIVE SLOT:${active_slot} ===; " \
 		"slot=${active_slot}; " \

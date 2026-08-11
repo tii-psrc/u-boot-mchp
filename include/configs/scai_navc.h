@@ -106,8 +106,21 @@
 			"echo \"active_slot invalid, using default\"; " \
 			"setenv active_slot ${default_active_slot}; " \
 		"fi\0" \
+	"default_boot_device=def\0" \
+	"ensure_boot_device=" \
+		"if env exists boot_device; then " \
+			"echo \"Using boot_device from HSS: ${boot_device}\"; " \
+		"else " \
+			"echo \"boot_device not set, using default\"; " \
+			"setenv boot_device ${default_boot_device}; " \
+		"fi; " \
+		"if test \"${boot_device}\" != \"nom\" && test \"${boot_device}\" != \"red\"; then " \
+			"echo \"boot_device invalid, using default\"; " \
+			"setenv boot_device ${default_boot_device}; " \
+		"fi\0" \
 	"bootcmd_ubifs=" \
 		"run ensure_active_slot; " \
+		"run ensure_boot_device; " \
 		"run set_bootargs; " \
 		"echo === [BOOT] ACTIVE SLOT:${active_slot} ===; " \
 		"slot=${active_slot}; " \
@@ -120,6 +133,7 @@
 	"boot_targets=ubifs\0" \
 	"distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done\0" \
 	"bootcmd=run distro_bootcmd\0" \
+
 
 #if !defined(CONFIG_FIT_SIGNATURE)
 #include <config_distro_bootcmd.h>
