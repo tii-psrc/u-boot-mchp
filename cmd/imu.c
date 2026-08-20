@@ -205,13 +205,20 @@ static struct scai_imu imu[SCAI_IMU_COUNT] = {
 static uint imu_div = 40;
 
 /*
- * TX FIFO byte packing. drivers/spi/scai_fpgaqspi.c puts the transmit byte in
- * the MSB and receives in the LSB; the receive half is confirmed for this IP,
- * the transmit half was confirmed as MSB on hardware 2026-08-20: a hand-driven
- * Product ID request with the byte in bits 31:24 was answered, so 24 is the
- * right default. "imu id" still probes both, as cheap insurance.
+ * TX FIFO byte packing: this IP takes the transmit byte from the LSB, unlike
+ * drivers/spi/scai_fpgaqspi.c which packs it into the MSB. Confirmed on
+ * hardware 2026-08-20 - a Product ID request answered with shift 0 and not
+ * with shift 24.
+ *
+ * Worth knowing why an earlier hand-driven test appeared to prove the
+ * opposite: written MSB-style, 0x06000000 / 0x02000000 / 0xf9000000 all carry
+ * 0x00 in the low byte, so the part was actually sent six zero bytes. The
+ * 20-byte control-channel cargo that came back was not a reply at all, it was
+ * the unsolicited startup Command Response (report 0xF1), which happens to be
+ * the same length as a Product ID response. "imu id" avoids that trap by
+ * matching on the report ID rather than on a packet merely arriving.
  */
-static uint imu_tx_shift = 24;
+static uint imu_tx_shift = 0;
 
 static u8 imu_buf[IMU_BUF_LEN];
 
@@ -724,7 +731,7 @@ static int do_imu_init(struct cmd_tbl *cmdtp, int flag, int argc,
 		       char *const argv[])
 {
 	struct scai_imu *p;
-	int drained;
+	int drained, i;
 
 	if (argc != 2)
 		return CMD_RET_USAGE;
@@ -765,7 +772,18 @@ static int do_imu_init(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	p->ready = true;
 
+	/* The startup burst is several cargoes - advertisement on channel 0,
+	 * "reset complete" on the executable channel, and an unsolicited
+	 * Command Response on the control channel - and they do not all arrive
+	 * at once. A single drain pass returns as soon as H_INTN happens to be
+	 * low, leaving the rest to collide with the first write.
+	 */
 	drained = imu_drain(p, 8);
+	for (i = 0; i < 3; i++) {
+		if (imu_wait_int(p, 20))
+			break;
+		drained += imu_drain(p, 8);
+	}
 	printf("%s: up, discarded %d startup packet%s\n",
 	       p->name, drained, drained == 1 ? "" : "s");
 
