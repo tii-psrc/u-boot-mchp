@@ -518,7 +518,11 @@ static int sh2_report_len(u8 rid)
  * Print a Q-point fixed value with four decimals. Reports are s16, so
  * raw * 10000 stays inside s32 and no 64-bit division is needed.
  */
-static void imu_print_q(s16 raw, int q)
+/*
+ * Format a Q-point fixed value with four decimals. Reports are s16, so
+ * raw * 10000 stays inside s32 and no 64-bit division is needed.
+ */
+static void imu_fmt_q(char *buf, int len, s16 raw, int q)
 {
 	s32 scaled = ((s32)raw * 10000) / (1 << q);
 	s32 ip = scaled / 10000;
@@ -528,25 +532,128 @@ static void imu_print_q(s16 raw, int q)
 		fp = -fp;
 
 	if (scaled < 0 && ip == 0)
-		printf("-0.%04d", fp);
+		snprintf(buf, len, "-0.%04d", fp);
 	else
-		printf("%d.%04d", ip, fp);
+		snprintf(buf, len, "%d.%04d", ip, fp);
 }
 
+/* 100 us ticks -> milliseconds with one decimal */
+static void imu_fmt_ms(char *buf, int len, s32 ticks)
+{
+	s32 ip = ticks / 10;
+	s32 fp = ticks % 10;
+
+	if (fp < 0)
+		fp = -fp;
+
+	if (ticks < 0 && ip == 0)
+		snprintf(buf, len, "-0.%d", fp);
+	else
+		snprintf(buf, len, "%d.%d", ip, fp);
+}
+
+/*
+ * Every sensor input report carries a 14-bit delay in 100 us ticks, split
+ * across the status byte: bits 7:2 are the high six, byte 3 the low eight.
+ * Bits 1:0 of the same byte are the accuracy.
+ */
+static s32 sh2_report_delay(const u8 *r)
+{
+	return (((s32)r[2] >> 2) << 8) | r[3];
+}
+
+#define SH2_ACCURACY(r)		((r)[2] & 0x03)
+
+/*
+ * Accelerometer and gyroscope arrive as separate reports, often in separate
+ * cargoes, so pair them up and emit one aligned row per sample. A row is
+ * emitted as soon as both halves are in hand; if a second sample of the same
+ * kind turns up first the older one is flushed with dashes rather than
+ * dropped, which keeps this honest when only one sensor is enabled or the two
+ * are running at different rates.
+ */
+struct imu_pending {
+	bool	have;
+	s16	x, y, z;
+	u8	seq;
+	u8	acc;
+	s32	t;		/* 100 us ticks relative to the H_INTN assert */
+};
+
+static struct imu_pending pend_accel, pend_gyro;
+static s32 imu_timebase;	/* from report 0xFB, extended by 0xFA */
+
+static void imu_row_header(void)
+{
+	printf("%10s %10s %10s %10s %10s %10s %10s  %s\n",
+	       "t(ms)", "ax", "ay", "az", "gx", "gy", "gz", "acc  seq");
+}
+
+static void imu_flush_row(void)
+{
+	char t[16], ax[16], ay[16], az[16], gx[16], gy[16], gz[16];
+
+	if (!pend_accel.have && !pend_gyro.have)
+		return;
+
+	imu_fmt_ms(t, sizeof(t), pend_accel.have ? pend_accel.t : pend_gyro.t);
+
+	if (pend_accel.have) {
+		imu_fmt_q(ax, sizeof(ax), pend_accel.x, 8);
+		imu_fmt_q(ay, sizeof(ay), pend_accel.y, 8);
+		imu_fmt_q(az, sizeof(az), pend_accel.z, 8);
+	} else {
+		strcpy(ax, "-"); strcpy(ay, "-"); strcpy(az, "-");
+	}
+
+	if (pend_gyro.have) {
+		imu_fmt_q(gx, sizeof(gx), pend_gyro.x, 9);
+		imu_fmt_q(gy, sizeof(gy), pend_gyro.y, 9);
+		imu_fmt_q(gz, sizeof(gz), pend_gyro.z, 9);
+	} else {
+		strcpy(gx, "-"); strcpy(gy, "-"); strcpy(gz, "-");
+	}
+
+	printf("%10s %10s %10s %10s %10s %10s %10s  %u/%u %3u/%3u\n",
+	       t, ax, ay, az, gx, gy, gz,
+	       pend_accel.have ? pend_accel.acc : 0,
+	       pend_gyro.have ? pend_gyro.acc : 0,
+	       pend_accel.have ? pend_accel.seq : 0,
+	       pend_gyro.have ? pend_gyro.seq : 0);
+
+	pend_accel.have = false;
+	pend_gyro.have = false;
+}
+
+static void imu_stash(struct imu_pending *slot, const u8 *r)
+{
+	if (slot->have)
+		imu_flush_row();	/* its partner never turned up */
+
+	slot->x = (s16)(r[4] | (r[5] << 8));
+	slot->y = (s16)(r[6] | (r[7] << 8));
+	slot->z = (s16)(r[8] | (r[9] << 8));
+	slot->seq = r[1];
+	slot->acc = SH2_ACCURACY(r);
+	slot->t = sh2_report_delay(r) - imu_timebase;
+	slot->have = true;
+
+	if (pend_accel.have && pend_gyro.have)
+		imu_flush_row();
+}
+
+/* Sensors without a paired partner keep the old one-line-per-report form. */
 static void sh2_print_vec(const char *name, const u8 *r, int q,
 			  const char *unit)
 {
-	s16 x = (s16)(r[4] | (r[5] << 8));
-	s16 y = (s16)(r[6] | (r[7] << 8));
-	s16 z = (s16)(r[8] | (r[9] << 8));
+	char x[16], y[16], z[16];
 
-	printf("  %-8s x=", name);
-	imu_print_q(x, q);
-	printf(" y=");
-	imu_print_q(y, q);
-	printf(" z=");
-	imu_print_q(z, q);
-	printf(" %-6s seq=%3u acc=%u\n", unit, r[1], r[2] & 3);
+	imu_fmt_q(x, sizeof(x), (s16)(r[4] | (r[5] << 8)), q);
+	imu_fmt_q(y, sizeof(y), (s16)(r[6] | (r[7] << 8)), q);
+	imu_fmt_q(z, sizeof(z), (s16)(r[8] | (r[9] << 8)), q);
+
+	printf("  %-8s %10s %10s %10s %-6s acc=%u\n",
+	       name, x, y, z, unit, SH2_ACCURACY(r));
 }
 
 static void imu_hexdump(const u8 *buf, int len)
@@ -584,27 +691,26 @@ static void sh2_dump_reports(const u8 *buf, int len)
 
 		switch (rid) {
 		case SH2_BASE_TIMESTAMP:
-		case SH2_TIMESTAMP_REBASE: {
-			s32 d = buf[off + 1] | (buf[off + 2] << 8) |
-				(buf[off + 3] << 16) | (buf[off + 4] << 24);
-
-			/* 100 us ticks, relative to the H_INTN assert */
-			printf("  %-8s %d.%01d ms\n",
-			       rid == SH2_BASE_TIMESTAMP ? "timebase" : "rebase",
-			       d / 10, d < 0 ? -(d % 10) : d % 10);
+			imu_timebase = buf[off + 1] | (buf[off + 2] << 8) |
+				       (buf[off + 3] << 16) |
+				       (buf[off + 4] << 24);
 			break;
-		}
+		case SH2_TIMESTAMP_REBASE:
+			imu_timebase += buf[off + 1] | (buf[off + 2] << 8) |
+					(buf[off + 3] << 16) |
+					(buf[off + 4] << 24);
+			break;
 		case SH2_RPT_ACCEL:
-			sh2_print_vec("accel", buf + off, 8, "m/s^2");
+			imu_stash(&pend_accel, buf + off);
+			break;
+		case SH2_RPT_GYRO:
+			imu_stash(&pend_gyro, buf + off);
 			break;
 		case SH2_RPT_LINEAR_ACCEL:
 			sh2_print_vec("lin.acc", buf + off, 8, "m/s^2");
 			break;
 		case SH2_RPT_GRAVITY:
 			sh2_print_vec("gravity", buf + off, 8, "m/s^2");
-			break;
-		case SH2_RPT_GYRO:
-			sh2_print_vec("gyro", buf + off, 9, "rad/s");
 			break;
 		case SH2_RPT_MAG:
 			sh2_print_vec("mag", buf + off, 4, "uT");
@@ -617,6 +723,7 @@ static void sh2_dump_reports(const u8 *buf, int len)
 		off += rlen;
 	}
 }
+
 
 static int sh2_set_feature(struct scai_imu *p, u8 rid, u32 interval_us)
 {
@@ -960,6 +1067,11 @@ static int do_imu_read(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	printf("%s: reading (Ctrl-C to stop)\n", p->name);
 
+	pend_accel.have = false;
+	pend_gyro.have = false;
+	imu_timebase = 0;
+	imu_row_header();
+
 	while (!count || got < count) {
 		int len, rc;
 
@@ -967,12 +1079,14 @@ static int do_imu_read(struct cmd_tbl *cmdtp, int flag, int argc,
 		 * report it rather than us re-testing after the fact.
 		 */
 		if (ctrlc()) {
+			imu_flush_row();
 			printf("interrupted\n");
 			break;
 		}
 
 		rc = imu_wait_int(p, IMU_INT_TIMEOUT_MS);
 		if (rc == -EINTR) {
+			imu_flush_row();
 			printf("interrupted\n");
 			break;
 		}
@@ -985,25 +1099,29 @@ static int do_imu_read(struct cmd_tbl *cmdtp, int flag, int argc,
 		if (len < 0)
 			return CMD_RET_FAILURE;
 
-		printf("packet chan %u len %d seq %u\n",
-		       imu_buf[2], len, imu_buf[3]);
-
 		if (len > (int)sizeof(imu_buf)) {
-			printf("  (truncated to %d bytes)\n",
+			printf("packet chan %u len %d seq %u (truncated to "
+			       "%d)\n", imu_buf[2], len, imu_buf[3],
 			       (int)sizeof(imu_buf));
 			len = sizeof(imu_buf);
 		}
 
 		if (imu_buf[2] == SHTP_CHAN_INPUT ||
 		    imu_buf[2] == SHTP_CHAN_WAKE_INPUT ||
-		    imu_buf[2] == SHTP_CHAN_GYRO_RV)
+		    imu_buf[2] == SHTP_CHAN_GYRO_RV) {
+			/* rows only - a packet header per cargo at 200 Hz
+			 * would bury the data it is describing
+			 */
 			sh2_dump_reports(imu_buf, len);
-		else
+		} else {
 			/* control/command replies: no report structure to
 			 * decode, but seeing the bytes is the whole point
 			 * when something is not working
 			 */
+			printf("packet chan %u len %d seq %u\n",
+			       imu_buf[2], len, imu_buf[3]);
 			imu_hexdump(imu_buf, min(len, 64));
+		}
 
 		got++;
 	}
