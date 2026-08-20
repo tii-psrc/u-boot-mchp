@@ -207,8 +207,9 @@ static uint imu_div = 40;
 /*
  * TX FIFO byte packing. drivers/spi/scai_fpgaqspi.c puts the transmit byte in
  * the MSB and receives in the LSB; the receive half is confirmed for this IP,
- * the transmit half is not, because only 0x00 has been sent so far. "imu id"
- * probes both and latches whichever answers.
+ * the transmit half was confirmed as MSB on hardware 2026-08-20: a hand-driven
+ * Product ID request with the byte in bits 31:24 was answered, so 24 is the
+ * right default. "imu id" still probes both, as cheap insurance.
  */
 static uint imu_tx_shift = 24;
 
@@ -340,7 +341,19 @@ static int imu_wake(struct scai_imu *p)
 	p->ctrl1 |= I_CTRL_PS0_MASK;
 	imu_write_ctrl1(p);
 
-	return rc;
+	if (rc == -EINTR)
+		return rc;
+
+	/* Not fatal if H_INTN never showed up. A hand-driven sequence that
+	 * pulsed WAKE and never observed the assertion still got a Product ID
+	 * response back, so refusing to write here would be worse than trying.
+	 * Most likely the part was already awake.
+	 */
+	if (rc)
+		printf("imu: %s: no H_INTN within %d ms of WAKE, writing "
+		       "anyway\n", p->name, IMU_WAKE_TIMEOUT_MS);
+
+	return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -420,11 +433,8 @@ static int shtp_write(struct scai_imu *p, u8 chan, const u8 *data, int len)
 	imu_drain(p, 4);
 
 	rc = imu_wake(p);
-	if (rc) {
-		printf("imu: %s: no H_INTN after wake - part did not accept "
-		       "the handshake\n", p->name);
+	if (rc)
 		return rc;
-	}
 
 	hdr[0] = total & 0xff;
 	hdr[1] = (total >> 8) & 0xff;
@@ -530,6 +540,21 @@ static void sh2_print_vec(const char *name, const u8 *r, int q,
 	printf(" z=");
 	imu_print_q(z, q);
 	printf(" %-6s seq=%3u acc=%u\n", unit, r[1], r[2] & 3);
+}
+
+static void imu_hexdump(const u8 *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++) {
+		if (!(i % 16))
+			printf("  %04x:", i);
+		printf(" %02x", buf[i]);
+		if ((i % 16) == 15)
+			printf("\n");
+	}
+	if (i % 16)
+		printf("\n");
 }
 
 static void sh2_dump_reports(const u8 *buf, int len)
@@ -955,6 +980,12 @@ static int do_imu_read(struct cmd_tbl *cmdtp, int flag, int argc,
 		    imu_buf[2] == SHTP_CHAN_WAKE_INPUT ||
 		    imu_buf[2] == SHTP_CHAN_GYRO_RV)
 			sh2_dump_reports(imu_buf, len);
+		else
+			/* control/command replies: no report structure to
+			 * decode, but seeing the bytes is the whole point
+			 * when something is not working
+			 */
+			imu_hexdump(imu_buf, min(len, 64));
 
 		got++;
 	}
