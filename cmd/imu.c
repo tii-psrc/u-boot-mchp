@@ -160,6 +160,7 @@ enum imu_sts2 {
 #define IMU_BUF_LEN		320
 
 #define IMU_XFER_TIMEOUT_MS	20
+#define IMU_WAKE_TIMEOUT_MS	50
 #define IMU_INT_TIMEOUT_MS	500
 #define IMU_RESET_SETTLE_MS	5
 #define IMU_PWR_SETTLE_MS	20
@@ -312,6 +313,36 @@ static int imu_xfer(struct scai_imu *p, u8 out, u8 *in)
 	return 0;
 }
 
+/*
+ * Ask the part for permission to talk.
+ *
+ * Datasheet 1.2.4.3: reads are easy because the BNO085 raises H_INTN when it
+ * has something to say, but for a host-initiated transfer the part may be
+ * asleep. PS0 - which was a protocol-select strap before reset - is
+ * repurposed as an active-low WAKE afterwards. Drive it low, wait for H_INTN
+ * (twk is typically 150 us), then release it; the part drops H_INTN again as
+ * soon as it sees chip select.
+ *
+ * Without this a write is clocked into a sleeping part and vanishes.
+ */
+static int imu_wake(struct scai_imu *p)
+{
+	int rc;
+
+	if (imu_int_asserted(p))
+		return 0;	/* already asking for attention */
+
+	p->ctrl1 &= ~I_CTRL_PS0_MASK;
+	imu_write_ctrl1(p);
+
+	rc = imu_wait_int(p, IMU_WAKE_TIMEOUT_MS);
+
+	p->ctrl1 |= I_CTRL_PS0_MASK;
+	imu_write_ctrl1(p);
+
+	return rc;
+}
+
 /* ------------------------------------------------------------------ */
 /* SHTP                                                                */
 /* ------------------------------------------------------------------ */
@@ -373,11 +404,27 @@ out:
 	return rc;
 }
 
+static int imu_drain(struct scai_imu *p, int max_packets);
+
 static int shtp_write(struct scai_imu *p, u8 chan, const u8 *data, int len)
 {
 	u8 hdr[SHTP_HDR_LEN];
+	u8 rx[SHTP_HDR_LEN] = { 0 };
 	int total = len + SHTP_HDR_LEN;
 	int i, rc = 0;
+	u16 rxlen;
+
+	/* SPI is full duplex, so anything the part already has queued would be
+	 * clocked in underneath our write and lost. Take it first.
+	 */
+	imu_drain(p, 4);
+
+	rc = imu_wake(p);
+	if (rc) {
+		printf("imu: %s: no H_INTN after wake - part did not accept "
+		       "the handshake\n", p->name);
+		return rc;
+	}
 
 	hdr[0] = total & 0xff;
 	hdr[1] = (total >> 8) & 0xff;
@@ -387,11 +434,22 @@ static int shtp_write(struct scai_imu *p, u8 chan, const u8 *data, int len)
 	imu_cs(p, true);
 
 	for (i = 0; i < SHTP_HDR_LEN && !rc; i++)
-		rc = imu_xfer(p, hdr[i], NULL);
+		rc = imu_xfer(p, hdr[i], &rx[i]);
 	for (i = 0; i < len && !rc; i++)
 		rc = imu_xfer(p, data[i], NULL);
 
 	imu_cs(p, false);
+
+	/* If the part started a cargo of its own in the same transaction we
+	 * have just eaten its header. Say so rather than desynchronise
+	 * silently.
+	 */
+	rxlen = rx[0] | (rx[1] << 8);
+	if (!rc && rxlen && rxlen != SHTP_LEN_BOGUS &&
+	    rx[2] < SHTP_CHAN_COUNT)
+		printf("imu: %s: collided with an inbound cargo (len %u chan "
+		       "%u); it is lost\n", p->name, rxlen, rx[2]);
+
 	return rc;
 }
 
