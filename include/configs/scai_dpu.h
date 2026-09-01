@@ -106,16 +106,18 @@
 			"echo \"active_slot invalid, using default\"; " \
 			"setenv active_slot ${default_active_slot}; " \
 		"fi\0" \
-	"default_boot_device=def\0" \
+	"default_boot_device=unknown\0" \
 	"ensure_boot_device=" \
 		"if env exists boot_device; then " \
 			"echo \"Using boot_device from HSS: ${boot_device}\"; " \
 		"else " \
-			"echo \"boot_device not set, using default\"; " \
+			"echo \"ERROR: boot_device not supplied by HSS\"; " \
+			"echo \"ERROR: check CONFIG_SERVICE_BOOT_DEVICE_NAME in the HSS build\"; " \
 			"setenv boot_device ${default_boot_device}; " \
 		"fi; " \
 		"if test \"${boot_device}\" != \"nom\" && test \"${boot_device}\" != \"red\"; then " \
-			"echo \"boot_device invalid, using default\"; " \
+			"echo \"ERROR: boot_device '${boot_device}' is not nom or red\"; " \
+			"echo \"ERROR: check CONFIG_SERVICE_BOOT_DEVICE_NAME in the HSS build\"; " \
 			"setenv boot_device ${default_boot_device}; " \
 		"fi\0" \
 	"bootcmd_ubifs=" \
